@@ -1,0 +1,30 @@
+{
+  "name": "pcw-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "share": "node src/scripts/share.js",
+    "fetch-images": "node src/scripts/fetch-images.js",
+    "test": "node --test test/*.test.js",
+    "export": "node src/scripts/export.js",
+    "import-events": "node src/scripts/import-events.js"
+  },
+  "dependencies": {
+    "compression": "^1.7.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.4.1",
+    "mongodb": "^6.10.0",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "optionalDependencies": {
+    "cloudflared": "^0.7.3"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0"
+  }
+}

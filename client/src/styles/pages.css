@@ -1,0 +1,712 @@
+/* Inner pages (Bangalore / Guwahati / Recordings). Same PCW theme as the home page.
+   Colours come from the Webflow CSS variables. Every class starts with "pcw-" so
+   nothing here can change the home page. */
+:root {
+  --pcw-green: var(--color--primary--green, #205c40);
+  --pcw-green-deep: #184a33;
+  --pcw-cream: var(--color--primary--off-white, #feffe8);
+  --pcw-card: #efeadb;
+  --pcw-card-photo: #e7e0c8;
+  --pcw-pink: var(--color--secondary--pink, #ffb1bb);
+  --pcw-orange: var(--color--primary--orange, #ff5c39);
+  --pcw-yellow: var(--color--primary--yellow, #ffbf3f);
+}
+
+/* active item in the nav (e.g. "Bangalore" on the Bangalore page) */
+.w-nav-link.is-current {
+  box-shadow: inset 0 -3px 0 var(--pcw-green);
+}
+.hamburgercontent .w-nav-link.is-current {
+  box-shadow: inset 0 -3px 0 var(--pcw-pink);
+}
+
+.pcw-page {
+  display: block;
+  background: var(--pcw-green);
+  color: var(--pcw-cream);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  overflow-x: clip;
+  padding-bottom: 80px;
+}
+body.pcw-modal-open {
+  overflow: hidden;
+}
+.pcw-wrap {
+  width: min(1240px, 100% - 64px);
+  margin-inline: auto;
+  position: relative;
+}
+
+/* ---------- hero ---------- */
+.pcw-city-hero {
+  position: relative;
+  padding-top: 182px;
+  padding-bottom: 40px;
+  min-height: 520px;
+  box-sizing: border-box;
+}
+.pcw-hero-pad {
+  padding-top: 70px;
+}
+.pcw-subnav {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  margin: 0 auto 70px;
+  padding: 7px;
+  border-radius: 999px;
+  background: var(--pcw-cream);
+  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.5);
+}
+.pcw-events-menu {
+  position: relative;
+}
+.pcw-events-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 26px 0 34px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--pcw-green);
+  font: 500 22px/1 'Space Grotesk', system-ui, sans-serif;
+  cursor: pointer;
+}
+.pcw-events-btn[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+.pcw-events-btn svg {
+  transition: transform 0.2s;
+}
+.pcw-dropdown {
+  position: absolute;
+  top: calc(100% + 12px);
+  left: 0;
+  width: 400px;
+  max-width: calc(100vw - 40px);
+  background: #fff;
+  border: 1px solid var(--pcw-green);
+  box-shadow: 0 24px 50px -24px rgba(0, 0, 0, 0.5);
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+}
+.pcw-dropdown button {
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 20px 44px;
+  font: 400 24px/1.2 'Space Grotesk', system-ui, sans-serif;
+  color: var(--pcw-green);
+  cursor: pointer;
+}
+.pcw-dropdown button:hover,
+.pcw-dropdown button:focus-visible {
+  background: var(--pcw-cream);
+  outline: none;
+}
+.pcw-eyebrow {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 18px;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  color: var(--pcw-pink);
+}
+.pcw-city-title {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: clamp(64px, 12vw, 176px);
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: -0.035em;
+  color: var(--pcw-cream);
+}
+.pcw-braid {
+  position: absolute;
+  pointer-events: none;
+}
+.pcw-city-braid {
+  right: -40px;
+  top: 250px;
+  width: 64%;
+  height: 300px;
+  z-index: 0;
+}
+
+/* ---------- buttons ---------- */
+.pcw-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 28px;
+  border-radius: 999px;
+  border: 0;
+  font: 700 17px/1 'Space Grotesk', system-ui, sans-serif;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.15s, filter 0.15s;
+  white-space: nowrap;
+}
+.pcw-pill:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.04);
+}
+.pcw-pill:disabled {
+  opacity: 0.6;
+  cursor: wait;
+  transform: none;
+}
+.pcw-pill-green {
+  background: var(--pcw-green);
+  color: var(--pcw-cream);
+  min-height: 56px;
+  font-size: 22px;
+  padding: 0 40px;
+}
+.pcw-pill-pink {
+  background: var(--pcw-pink);
+  color: var(--pcw-green);
+}
+.pcw-page :focus-visible,
+.pcw-modal :focus-visible {
+  outline: 3px solid var(--pcw-yellow);
+  outline-offset: 3px;
+}
+
+/* ---------- sections & cards ---------- */
+.pcw-block {
+  padding-top: 70px;
+  scroll-margin-top: 30px;
+}
+.pcw-h2 {
+  margin: 0 0 44px;
+  font-size: clamp(44px, 6vw, 80px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--pcw-cream);
+}
+.pcw-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 36px;
+}
+.pcw-card {
+  background: var(--pcw-card);
+  color: var(--pcw-green);
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow 0.3s;
+}
+.pcw-card.is-flash {
+  box-shadow: 0 0 0 5px var(--pcw-yellow);
+}
+.pcw-card-photo {
+  aspect-ratio: 362 / 258;
+  background: var(--pcw-card-photo);
+  overflow: hidden;
+}
+.pcw-card-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.pcw-card-photo-empty {
+  height: 100%;
+  box-sizing: border-box;
+  border: 2px dashed #b8ad8e;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #4a5f52;
+  text-align: center;
+  padding: 16px;
+}
+.pcw-tag-dark {
+  background: var(--pcw-green);
+  color: var(--pcw-cream);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+.pcw-card-body {
+  padding: 32px 34px 34px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
+}
+.pcw-card-cat {
+  margin: 0 0 14px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.pcw-card-title {
+  margin: 0 0 12px;
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.15;
+  color: var(--pcw-green);
+}
+.pcw-card-summary {
+  margin: 0 0 12px;
+  font-size: 18px;
+  line-height: 1.45;
+}
+.pcw-card-when {
+  margin: 0 0 24px;
+  font-size: 15px;
+  color: #3e5a4b;
+  flex: 1;
+}
+.pcw-empty {
+  border: 2px dashed rgba(254, 255, 232, 0.35);
+  padding: 44px 36px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: center;
+  justify-content: space-between;
+}
+.pcw-empty p {
+  margin: 0;
+  font-size: 20px;
+  max-width: 640px;
+}
+.pcw-error {
+  padding-top: 40px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  color: var(--pcw-pink);
+}
+.pcw-loading {
+  height: 200px;
+  display: grid;
+  place-items: center;
+}
+.pcw-loading::after {
+  content: '';
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 4px solid rgba(254, 255, 232, 0.25);
+  border-top-color: var(--pcw-pink);
+  animation: pcw-spin 0.8s linear infinite;
+}
+@keyframes pcw-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.pcw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 40px;
+}
+.pcw-chips button {
+  min-height: 46px;
+  padding: 0 24px;
+  border-radius: 999px;
+  border: 2px solid var(--pcw-cream);
+  background: transparent;
+  color: var(--pcw-cream);
+  font: 500 17px 'Space Grotesk', system-ui, sans-serif;
+  cursor: pointer;
+}
+.pcw-chips button.is-on {
+  background: var(--pcw-cream);
+  color: var(--pcw-green);
+}
+
+/* ---------- calendar ---------- */
+.pcw-cal {
+  background: var(--pcw-card);
+  color: var(--pcw-green);
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+}
+.pcw-cal-head {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 26px 30px 10px;
+}
+.pcw-cal-head h3 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--pcw-green);
+}
+.pcw-cal-nav {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 2px solid var(--pcw-green);
+  background: transparent;
+  color: var(--pcw-green);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pcw-cal-nav:hover {
+  background: var(--pcw-green);
+  color: var(--pcw-cream);
+}
+.pcw-cal-grid {
+  grid-column: 1;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  padding: 10px 30px 30px;
+}
+.pcw-cal-wd {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 8px 0;
+}
+.pcw-cal-day {
+  position: relative;
+  aspect-ratio: 1;
+  min-height: 44px;
+  border: 0;
+  background: #f7f3e6;
+  color: var(--pcw-green);
+  font: 500 18px 'Space Grotesk', system-ui, sans-serif;
+  cursor: pointer;
+}
+.pcw-cal-day.is-past {
+  color: #7d8c80;
+}
+.pcw-cal-day.has-event {
+  background: var(--pcw-pink);
+  color: var(--pcw-green);
+  font-weight: 700;
+}
+.pcw-cal-day.has-event.is-past {
+  background: #e3cfc8;
+}
+.pcw-cal-day i {
+  position: absolute;
+  left: 50%;
+  bottom: 14%;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  border-radius: 50%;
+  background: var(--pcw-green);
+}
+.pcw-cal-day.is-today {
+  box-shadow: inset 0 0 0 3px var(--pcw-green);
+}
+.pcw-cal-day.is-selected {
+  background: var(--pcw-green);
+  color: var(--pcw-cream);
+}
+.pcw-cal-day.is-selected i {
+  background: var(--pcw-yellow);
+}
+.pcw-cal-empty {
+  aspect-ratio: 1;
+}
+.pcw-cal-list {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  background: var(--pcw-green-deep);
+  color: var(--pcw-cream);
+  padding: 30px;
+}
+.pcw-cal-list-title {
+  margin: 0 0 18px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--pcw-pink);
+}
+.pcw-cal-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pcw-cal-list li button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  gap: 2px 14px;
+  text-align: left;
+  padding: 16px 0;
+  border: 0;
+  border-top: 1px solid rgba(254, 255, 232, 0.2);
+  background: none;
+  color: var(--pcw-cream);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  cursor: pointer;
+}
+.pcw-cal-list li button:hover .pcw-cal-ev {
+  text-decoration: underline;
+}
+.pcw-cal-date {
+  grid-row: span 2;
+  font-weight: 700;
+  color: var(--pcw-yellow);
+}
+.pcw-cal-ev {
+  font-size: 18px;
+}
+.pcw-cal-time {
+  font-size: 14px;
+  opacity: 0.75;
+}
+.pcw-cal-none {
+  margin: 0;
+  opacity: 0.8;
+}
+
+/* ---------- modal ---------- */
+.pcw-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(12, 30, 22, 0.65);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.pcw-modal {
+  position: relative;
+  width: min(680px, 100%);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--pcw-cream);
+  color: var(--pcw-green);
+  padding: 40px 40px 36px;
+  border-radius: 28px;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  box-sizing: border-box;
+}
+.pcw-modal h2 {
+  margin: 0 46px 8px 0;
+  font-size: 32px;
+  line-height: 1.15;
+  font-weight: 700;
+  color: var(--pcw-green);
+}
+.pcw-modal-intro {
+  margin: 0 0 24px;
+  font-size: 16px;
+  color: #3e5a4b;
+}
+.pcw-modal-close {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--pcw-pink);
+  color: var(--pcw-green);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pcw-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 18px;
+}
+.pcw-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pcw-field.is-wide {
+  grid-column: 1 / -1;
+}
+.pcw-field label {
+  font-size: 14px;
+  font-weight: 700;
+}
+.pcw-field input,
+.pcw-field select,
+.pcw-field textarea {
+  font: 400 16px 'Space Grotesk', system-ui, sans-serif;
+  color: #1d2b25;
+  background: #fff;
+  border: 1.5px solid rgba(32, 92, 64, 0.35) !important;
+  border-radius: 12px;
+  padding: 12px 14px;
+  min-height: 48px;
+  box-sizing: border-box;
+  width: 100%;
+}
+.pcw-field input:focus,
+.pcw-field select:focus,
+.pcw-field textarea:focus {
+  border-color: var(--pcw-green) !important;
+  outline: 3px solid rgba(255, 177, 187, 0.8);
+}
+.pcw-field.has-error input,
+.pcw-field.has-error select,
+.pcw-field.has-error textarea {
+  border-color: #c2330f !important;
+}
+.pcw-field-error,
+.pcw-form-message {
+  color: #b42a10;
+  font-size: 13px;
+  font-weight: 500;
+}
+.pcw-form-message {
+  margin: 18px 0 0;
+  font-size: 15px;
+}
+.pcw-submit {
+  margin-top: 24px;
+  width: 100%;
+}
+.pcw-modal-done p {
+  font-size: 22px;
+  line-height: 1.4;
+  margin: 10px 0 24px;
+}
+
+.pcw-soon {
+  width: min(480px, 100%);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 44px 36px 40px;
+}
+.pcw-soon h2 {
+  margin: 6px 0 0;
+}
+.pcw-soon .pcw-modal-intro {
+  margin: 0 0 10px;
+}
+
+/* ---------- tablet & phone ---------- */
+@media (max-width: 991px) {
+  .pcw-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .pcw-cal {
+    grid-template-columns: 1fr;
+  }
+  .pcw-cal-list {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  .pcw-city-hero {
+    padding-top: 150px;
+  }
+}
+@media (max-width: 640px) {
+  .pcw-wrap {
+    width: calc(100% - 36px);
+  }
+  .pcw-cards {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .pcw-city-hero {
+    padding-top: 130px;
+    min-height: 0;
+  }
+  .pcw-subnav {
+    margin-bottom: 44px;
+  }
+  .pcw-events-btn {
+    font-size: 18px;
+    padding: 0 16px 0 20px;
+    min-height: 46px;
+  }
+  .pcw-pill-green {
+    font-size: 17px;
+    padding: 0 22px;
+    min-height: 48px;
+  }
+  .pcw-dropdown {
+    width: 280px;
+  }
+  .pcw-dropdown button {
+    font-size: 19px;
+    padding: 16px 26px;
+  }
+  .pcw-eyebrow {
+    font-size: 14px;
+  }
+  .pcw-city-braid {
+    top: auto;
+    bottom: -40px;
+    right: -30px;
+    width: 110%;
+    height: 130px;
+  }
+  .pcw-city-hero {
+    padding-bottom: 90px;
+  }
+  .pcw-cal-head h3 {
+    font-size: 21px;
+  }
+  .pcw-cal-nav {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+  }
+  .pcw-block {
+    padding-top: 50px;
+  }
+  .pcw-card-body {
+    padding: 24px;
+  }
+  .pcw-cal-head,
+  .pcw-cal-grid,
+  .pcw-cal-list {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .pcw-cal-grid {
+    gap: 4px;
+  }
+  .pcw-cal-day {
+    font-size: 15px;
+    min-height: 0;
+  }
+  .pcw-modal {
+    padding: 30px 22px 26px;
+    border-radius: 22px;
+  }
+  .pcw-modal h2 {
+    font-size: 24px;
+  }
+  .pcw-form-grid {
+    grid-template-columns: 1fr;
+  }
+}

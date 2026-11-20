@@ -1,0 +1,20 @@
+{
+  "name": "pcw-mern",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Platform for Collective Wisdom (PCW) - MERN version (MongoDB, Express, React, Node).",
+  "scripts": {
+    "setup": "npm install --prefix server && npm install --prefix client && npm run build --prefix client",
+    "build": "npm run build --prefix client",
+    "start": "npm start --prefix server",
+    "dev": "node scripts/dev.js",
+    "share": "npm run share --prefix server",
+    "fetch-images": "npm run fetch-images --prefix server",
+    "test": "npm test --prefix server",
+    "export": "npm run export --prefix server --",
+    "import-events": "npm run import-events --prefix server --"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
