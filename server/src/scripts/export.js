@@ -9,7 +9,7 @@ const COLS = {
   rsvps: ['createdAt', 'city', 'eventDate', 'eventTitle', 'name', 'email', 'phone', 'organisation', 'people'],
   bookings: ['createdAt', 'city', 'name', 'email', 'phone', 'organisation', 'purpose', 'date', 'people', 'message', 'status'],
   newsletter: ['createdAt', 'email', 'source'],
-  events: ['city', 'date', 'time', 'title', 'category', 'summary', 'venue', 'image', 'recordingUrl', 'rsvpOpen'],
+  events: ['city', 'date', 'startTime', 'endTime', 'title', 'tagline', 'category', 'venue', 'image', 'youtubeUrl', 'rsvp', 'rsvpUrl', 'capacity', 'description'],
 };
 const what = process.argv[2];
 if (!COLS[what]) {
@@ -20,6 +20,6 @@ const store = createStore(config);
 await store.connect();
 const rows = await store.collection(what).find({}, { sort: { createdAt: 1 } });
 const out = path.join(PROJECT_ROOT, `${what}-${new Date().toISOString().slice(0, 10)}.csv`);
-fs.writeFileSync(out, toCsv(rows.map((r) => ({ ...r, rsvpOpen: r.rsvpOpen === false ? 'no' : 'yes' })), COLS[what]));
+fs.writeFileSync(out, toCsv(rows, COLS[what]));
 console.log(`${rows.length} rows saved to ${out}`);
 await store.close();

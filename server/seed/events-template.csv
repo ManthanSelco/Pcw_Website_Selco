@@ -1,4 +1,4 @@
-city,date,time,title,category,summary,venue,image,recordingUrl,rsvpOpen
-bangalore,2026-12-12,10:00 AM - 1:00 PM,[Event title],[Category],[One line on what the event is about],"PCW Space, Bengaluru",,,yes
-guwahati,2026-12-20,3:00 PM - 5:00 PM,[Event title],[Category],[One line on what the event is about],"PCW Space, Guwahati",,,yes
-bangalore,2026-10-05,11:00 AM,[Past event title],[Category],[One line on what the event was about],"PCW Space, Bengaluru",,https://www.youtube.com/watch?v=XXXXXXXXXXX,no
+city,date,startTime,endTime,title,tagline,category,venue,image,youtubeUrl,rsvp,rsvpUrl,capacity,description
+bangalore,2026-12-12,10:00,13:00,[Event title],[One line about the event],Workshops,"PCW Space, Bengaluru",,,open,,40,[Longer description]
+guwahati,20/12/2026,3:00 PM,5:00 PM,[Event title],[One line about the event],Talks,"PCW Space, Guwahati",,,link,https://forms.gle/your-form-link,,[Longer description]
+bangalore,2026-10-05,11:00,12:30,[Past event title],[One line about the event],Talks,"PCW Space, Bengaluru",,https://www.youtube.com/watch?v=XXXXXXXXXXX,none,,,[Longer description]

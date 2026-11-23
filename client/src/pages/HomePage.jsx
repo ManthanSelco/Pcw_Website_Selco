@@ -17,6 +17,26 @@ export default function HomePage() {
   useEffect(() => {
     // Webflow, GSAP and the custom animations need the page in the DOM first
     runLegacyScripts().then(connectNewsletter);
+    // Coming from another page with a link like /#about-us: once the loader is gone, scroll there.
+    const id = decodeURIComponent(window.location.hash.slice(1));
+    if (id) {
+      const go = () => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (window.lenis) window.lenis.scrollTo(el, { offset: -20, duration: 1.4 });
+        else el.scrollIntoView({ behavior: 'smooth' });
+      };
+      const ready = () => !document.body.classList.contains('nooverflow');
+      if (ready()) setTimeout(go, 300);
+      else {
+        const mo = new MutationObserver(() => {
+          if (!ready()) return;
+          mo.disconnect();
+          setTimeout(go, 300);
+        });
+        mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+      }
+    }
   }, []);
 
   return (
