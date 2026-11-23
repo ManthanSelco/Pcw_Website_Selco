@@ -1,0 +1,29 @@
+/* Small fixes on top of the original Webflow CSS (all pages, including home) */
+
+/* Footer was 30px wider than very small phones (360px) because of the newsletter box */
+@media (max-width: 479px) {
+  .footer .gridtwo_col.col_auto,
+  .footer .grid-four_col {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .footer .w-form,
+  .footer form {
+    max-width: 100%;
+    min-width: 0;
+  }
+  .footer form input:not([type='submit']) {
+    flex: 1 1 auto;
+    width: auto !important;
+    min-width: 0;
+  }
+  .footer form .submit-button {
+    flex-shrink: 0;
+  }
+}
+/* iPhone zooms into inputs with text smaller than 16px */
+@media (max-width: 767px) {
+  .footer input[type='email'],
+  .footer input[type='text'] {
+    font-size: 16px;
+  }
+}

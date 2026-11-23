@@ -63,40 +63,86 @@ npm run dev
 | Page | Link | What it shows |
 |---|---|---|
 | Home | `/` | Same as the Webflow site, with the new nav |
-| Bangalore | `/space/bangalore` | Upcoming events, then Past events, then Calendar, plus the "Events" menu and "Book the space" |
+| Bangalore | `/space/bangalore` | Top pill: **Events ▾** (Upcoming / Past / Calendar), **The space**, **Book the space**. Then category filter, Upcoming events, Past events, Calendar, the space section, and **Book the space** last. Every "Book the space" button opens the Google booking form in a new tab |
 | Guwahati | `/space/guwahati` | Same layout for Guwahati |
-| Recordings | `/recordings` | Past events (all cities) that have a recording link |
+| (both cities) | `#the-space` | **"A Space to Connect in Person"**, the same design as the home page. Bangalore has its space photos. Guwahati shows "Photo coming soon" until photos are uploaded |
+| Event page | `/event/<name>` | Photo, date/time/venue, RSVP, Add to calendar, Share/WhatsApp, description, speakers, **YouTube video playing on the page**, more events |
+| Recordings | `/recordings/podcasts`, `/recordings/reports`, `/recordings/videos` | BIC-style "Watch / Listen / Read": tabs **Podcasts · Reports · Videos**, count, city/category filter, search, cards with cover photo. YouTube, Spotify, SoundCloud, Apple Podcasts, Google Drive and .mp3/.mp4 links **play on the website**; PDF and other links open in a new tab. Event videos show under Videos automatically |
+| **Admin** | `/admin` | Login, then manage everything below |
 
-Nav on every page: **About Us · Recordings · PCW · Bangalore · Guwahati · Contact us** (the current page is underlined).
+Event cards follow the BIC (Bangalore International Centre) style: photo, category, title, one line, RSVP (or "RSVPs closed"), and date & time.
 
-- **RSVP** on an upcoming event is saved in MongoDB (`rsvps`). The same email can't RSVP twice for one event.
-- **Book the space** is saved in MongoDB (`bookings`).
-- Past events show **Watch recording** when they have a recording link.
+## Admin panel: http://localhost:4000/admin
+The login ID and password come from **`server/.env`** (created automatically on the first start):
+```
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=Pcw@2026
+```
+To change the login, edit these two lines, save, and restart (`npm start`). The new ID/password work right away.
 
-### Adding events (until the admin panel is built)
-1. Open `server\seed\events-template.csv` in Excel and fill one row per event:
-   `city` (bangalore / guwahati), `date` (YYYY-MM-DD or DD/MM/YYYY), `time`, `title`, `category`, `summary`, `venue`, `image` (photo link), `recordingUrl`, `rsvpOpen` (yes/no).
-   Delete the example rows first. The template rows are only placeholders.
-2. Save it as CSV, then run:
+- **Dashboard**: counts of events, podcasts, reports, videos, RSVPs and newsletter, plus the latest RSVPs.
+- **Events**: add, edit or delete events, with:
+  - city, title, one line, category, date, start/end time, venue
+  - **photo upload**, compressed automatically
+  - **YouTube link**: paste any YouTube link and the video plays on the event page and the Recordings page
+  - description, speakers, RSVP (Open / Closed / No RSVP), seats (RSVP closes when full), and Show on website on/off
+- **Delete all sample events**: one button. The site starts with 11 **sample events** (marked "Sample") so the pages aren't empty. Delete them when your real events are in.
+- **Recordings**: add, edit or delete **podcasts, reports and videos**: title, episode number, speakers/authors (one line), category, city, date, **link** (the form tells you if it will play on the site), **cover photo** (S3), about text, and Show on website on/off. 5 sample items are added at first; delete them in one click.
+- **City spaces**: heading, intro and the 3 cards (title, text, **photo**) of the space section for each city. Upload the Guwahati photos here when they are ready. They go to S3, and replaced photos are deleted from S3.
+- **RSVPs**: see who registered for each event, then search or download them as Excel (CSV).
+- **Newsletter**: see the footer sign-ups and download them.
+- **Settings**: the **"Book the space" Google Form link** (all booking buttons use it), and how to change the login.
+
+Photos uploaded in the admin panel go to **AWS S3** when it is set up (see below), otherwise to `data/uploads`.
+
+## Images in AWS S3
+When `S3_BUCKET` is set in `server/.env`:
+- **Upload**: the photo is compressed (WebP) and saved in the bucket under `project/images/pcw/`.
+- **Delete**: the photo is removed from the bucket when you replace it, remove it, cancel the form after uploading, delete the event, or use "Delete all sample events".
+- **The bucket can stay private.** The website shows images through the server (`/uploads/...`), so no public bucket or CORS setup is needed.
+
+**1. Settings in `server/.env`:**
+```
+S3_BUCKET=your-bucket-name
+S3_REGION=ap-south-1
+S3_PREFIX=project/images/pcw
+```
+**2. Permission (pick one):**
+- **On EC2 (recommended):** attach an IAM role to the server with the policy below. No keys are needed in `.env`.
+- **On a laptop:** create an IAM user with the same policy and put its keys in `.env` (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
+
+Policy (replace `your-bucket-name`):
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::selco-application-media-bucket/project/images/pcw/*"
+    }
+  ]
+}
+```
+**3. Restart the site.** The start-up message shows `Images: S3 bucket "your-bucket-name"`. If the bucket or permission is wrong, you'll see a **WARNING** line at start-up.
+
+Already uploaded some photos before setting up S3? Move them with:
+```powershell
+npm run images-to-s3
+```
+
+### Adding many events at once (optional; the admin panel is easier)
+Fill `server\seed\events-template.csv` in Excel (one row per event, delete the example rows), save it as CSV, then run:
 ```powershell
 npm run import-events -- D:\PCW\events.csv
 ```
-Same city + date + title updates the event instead of adding it twice. Add `--replace` to clear all old events first.
-Events dated today or later show under **Upcoming**. Older ones move to **Past** automatically.
 
-### Download data as Excel (CSV)
+### Download data as Excel (CSV) from the command line
+The admin panel has download buttons too.
 ```powershell
 npm run export -- rsvps
 ```
-```powershell
-npm run export -- bookings
-```
-```powershell
-npm run export -- newsletter
-```
-```powershell
-npm run export -- events
-```
+Use `bookings`, `newsletter` or `events` in place of `rsvps`.
 
 ## What changed compared with Webflow
 - **Newsletter (footer)** now saves emails to MongoDB (collection `newsletter`). It shows the same Webflow "Thank you" message, and duplicate emails are ignored.
@@ -118,11 +164,11 @@ On the server:
 cd ~ && sudo apt-get install -y unzip rsync && unzip -o pcw-mern.zip
 ```
 ```bash
-cd ~/pcw-mern && sudo bash deploy/setup-ec2.sh pcw.16-192-105-187.sslip.io 4100
+cd ~/pcw-mern && sudo bash deploy/setup-ec2.sh pcw.3-108-88-152.sslip.io 4100
 ```
 The script runs PCW as its own service (`pcw-mern`) with its own nginx file and HTTPS. If MongoDB is running on the server (for example CIP's Docker `mongo` on port 27017), the script uses it with a **separate database named `pcw`**. If your MongoDB needs a username and password, add the link as a 3rd argument:
 ```bash
-sudo bash deploy/setup-ec2.sh pcw.16-192-105-187.sslip.io 4100 "mongodb://USER:PASS@127.0.0.1:27017/pcw?authSource=admin"
+sudo bash deploy/setup-ec2.sh pcw.3-108-88-152.sslip.io 4100 "mongodb://USER:PASS@127.0.0.1:27017/pcw?authSource=admin"
 ```
 **Update later:** upload the new zip, unzip it, and run the same command again (your `server/.env` and `data/` are kept).
 
@@ -130,3 +176,56 @@ sudo bash deploy/setup-ec2.sh pcw.16-192-105-187.sslip.io 4100 "mongodb://USER:P
 ```powershell
 npm test
 ```
+
+## Event registration
+
+Each event has a **Registration** choice in Admin > Events:
+
+| Choice | What visitors see |
+|---|---|
+| Our RSVP form | **RSVP** button, form on the website. Optional seat limit: shows "Housefull" when full. Same email can't register twice. See and download them in Admin > RSVPs |
+| Form link (Google Form etc.) | **Register ↗** button that opens your form link in a new tab |
+| Closed | "RSVPs closed" |
+| No registration | No button (walk-in events) |
+
+After the event date, registration closes by itself. Changing an event's title or date changes its link;
+the old link keeps working (redirects to the new one).
+
+## Going live checklist
+
+1. `server/.env`: `SEED_SAMPLES=false`, a strong `ADMIN_PASSWORD`, `SITE_URL`, `MONGODB_URI`, `S3_BUCKET`
+   (the EC2 deploy script sets the first three by itself and prints the admin password).
+2. Run `npm test` in `server/` (all tests should pass).
+3. After deploy: open the site, log in to `/admin`, add a real event, RSVP to it once, check Admin > RSVPs.
+4. Google Search Console / Bing: see the next section.
+
+## Server setup (EC2, fresh Ubuntu)
+
+```bash
+git clone https://github.com/ManthanSelco/Pcw_Website_Selco.git ~/pcw-src && cd ~/pcw-src
+sudo bash deploy/install-mongodb.sh          # once per server; prints the MongoDB URI
+sudo bash deploy/setup-ec2.sh pcw.3-108-88-152.sslip.io 4100 "<MongoDB URI>" selco-application-media-bucket
+```
+Update later: `cd ~/pcw-src && git pull && sudo bash deploy/setup-ec2.sh pcw.3-108-88-152.sslip.io 4100` (keeps `.env`, data and MongoDB).
+Another website can live on the same server: its own folder, port, service and nginx file, and its own database in the same MongoDB.
+
+## Google and AI search (SEO / AEO)
+
+Every page is sent with its own title, description, canonical link, WhatsApp/LinkedIn/X share preview,
+schema.org structured data (Organization, Event with date/time/venue/speakers, PodcastEpisode, VideoObject,
+Report, Breadcrumbs, ContactPage) and its main text as plain HTML, so Google and AI assistants
+(ChatGPT, Perplexity, Gemini, Claude) can read and quote it even without running JavaScript.
+
+| File | What it is |
+|---|---|
+| `/sitemap.xml` | All pages + every real event (updates by itself) |
+| `/robots.txt` | Lets Google, Bing and AI crawlers in; keeps `/admin` out |
+| `/llms.txt` | Short summary of PCW, key facts, upcoming events and recordings for AI assistants |
+
+Sample events and sample recordings are kept out of Google (`noindex`, not in the sitemap).
+
+After going live:
+1. Set `SITE_URL=https://your-domain` in `server/.env` (the deploy script does this) and restart.
+2. Add the site in **Google Search Console** and **Bing Webmaster Tools**, choose "HTML tag",
+   paste the code in **Admin > Settings > Google and AI search**, save, then click Verify.
+3. Submit `https://your-domain/sitemap.xml` in both.

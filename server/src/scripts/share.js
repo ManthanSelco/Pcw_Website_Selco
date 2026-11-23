@@ -9,8 +9,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import qrcode from 'qrcode-terminal';
 import { config, PROJECT_ROOT } from '../config.js';
-import { createStore } from '../lib/store.js';
-import { createApp } from '../app.js';
+import { boot } from '../boot.js';
 
 const line = '─'.repeat(60);
 const qr = (url) => new Promise((r) => qrcode.generate(url, { small: true }, (s) => (console.log(s), r())));
@@ -22,14 +21,14 @@ if (!fs.existsSync(path.join(config.clientDist, 'index.html'))) {
   if (r.status !== 0) process.exit(1);
 }
 
-const store = createStore(config);
+let store, app;
 try {
-  await store.connect();
+  ({ store, app } = await boot(config));
 } catch (e) {
-  console.error(`Could not connect to MongoDB (${e.message}). Check MONGODB_URI in server/.env`);
+  console.error(`Could not start (${e.message}). Check MONGODB_URI in server/.env`);
   process.exit(1);
 }
-const server = createApp(store, config).listen(config.port, '0.0.0.0');
+const server = app.listen(config.port, '0.0.0.0');
 await new Promise((r, j) => (server.once('listening', r), server.once('error', j))).catch((e) => {
   console.error(e.code === 'EADDRINUSE' ? `Port ${config.port} is already in use. Close the other window running the site.` : e);
   process.exit(1);
@@ -42,6 +41,7 @@ const lan = Object.values(os.networkInterfaces())
 
 console.log(`\n${line}\n PCW website is running\n${line}`);
 console.log(` This computer : http://localhost:${config.port}`);
+console.log(` Admin panel   : http://localhost:${config.port}/admin`);
 console.log(` Database      : ${store.kind === 'mongo' ? 'MongoDB' : 'local test file (data/db.json)'}`);
 if (lan.length) {
   console.log(' Same Wi-Fi    :', lan.join('  '));

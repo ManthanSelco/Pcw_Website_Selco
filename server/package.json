@@ -11,15 +11,23 @@
     "fetch-images": "node src/scripts/fetch-images.js",
     "test": "node --test test/*.test.js",
     "export": "node src/scripts/export.js",
-    "import-events": "node src/scripts/import-events.js"
+    "import-events": "node src/scripts/import-events.js",
+    "reset-password": "node src/scripts/reset-password.js",
+    "images-to-s3": "node src/scripts/images-to-s3.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1173.0",
+    "bcryptjs": "^2.4.3",
     "compression": "^1.7.5",
+    "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
     "express-rate-limit": "^7.4.1",
+    "jsonwebtoken": "^9.0.3",
     "mongodb": "^6.10.0",
-    "qrcode-terminal": "^0.12.0"
+    "multer": "^1.4.5-lts.1",
+    "qrcode-terminal": "^0.12.0",
+    "sharp": "^0.33.5"
   },
   "optionalDependencies": {
     "cloudflared": "^0.7.3"

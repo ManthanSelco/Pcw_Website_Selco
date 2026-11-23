@@ -4,73 +4,322 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import request from 'supertest';
-import { createStore } from '../src/lib/store.js';
-import { createApp } from '../src/app.js';
+import sharp from 'sharp';
+import { boot } from '../src/boot.js';
+import { youtubeId } from '../src/lib/events.js';
 
-let app, tmp, store;
+let app, tmp, store, agent;
+const fut = (d) => new Date(Date.now() + 864e5 * d).toISOString().slice(0, 10);
+
 before(async () => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pcw-'));
-  store = createStore({ jsonFile: path.join(tmp, 'db.json') });
-  await store.connect();
   fs.mkdirSync(path.join(tmp, 'dist'));
-  fs.writeFileSync(path.join(tmp, 'dist', 'index.html'), '<html>PCW</html>');
-  app = createApp(store, { clientDist: path.join(tmp, 'dist'), cdnCache: path.join(tmp, 'cdn') });
+  fs.writeFileSync(path.join(tmp, 'dist', 'index.html'), '<html><head><title>PCW</title><meta name="description" content="x"></head><body><div id="root"></div></body></html>');
+  ({ app, store } = await boot({
+    jsonFile: path.join(tmp, 'db.json'),
+    // TEST_MONGODB_URI=mongodb://127.0.0.1:27017 npm test  -> runs the same tests on MongoDB
+    mongoUri: process.env.TEST_MONGODB_URI ? `${process.env.TEST_MONGODB_URI}/pcw_test_api_${Date.now()}` : '',
+    clientDist: path.join(tmp, 'dist'),
+    cdnCache: path.join(tmp, 'cdn'),
+    dataDir: tmp,
+    uploadDir: path.join(tmp, 'uploads'),
+    adminUsername: 'admin',
+    adminPassword: 'Pcw@2026',
+    seedSamples: true,
+  }));
+  agent = request.agent(app);
 });
-after(() => fs.rmSync(tmp, { recursive: true, force: true }));
-
-test('health', async () => {
-  const r = await request(app).get('/api/health').expect(200);
-  assert.equal(r.body.db, 'json');
-});
-
-test('newsletter saves, lowercases and ignores duplicates', async () => {
-  await request(app).post('/api/newsletter').send({ email: 'Asha@Example.org' }).expect(200);
-  await request(app).post('/api/newsletter').send({ email: 'asha@example.org' }).expect(200);
-  assert.equal(await store.collection('newsletter').count(), 1);
-  assert.equal((await store.collection('newsletter').findOne({})).email, 'asha@example.org');
-});
-
-test('newsletter rejects bad emails', async () => {
-  await request(app).post('/api/newsletter').send({ email: 'nope' }).expect(400);
-  await request(app).post('/api/newsletter').send({}).expect(400);
+after(async () => {
+  await store.close?.();
+  fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-test('website routes fall back to index.html, unknown API is 404', async () => {
-  const r = await request(app).get('/some/page').expect(200);
-  assert.match(r.text, /PCW/);
+const login = (pw = 'Pcw@2026') => agent.post('/api/admin/login').send({ username: 'admin', password: pw });
+
+test('health + website fallback', async () => {
+  assert.equal((await request(app).get('/api/health').expect(200)).body.db, process.env.TEST_MONGODB_URI ? 'mongo' : 'json');
+  assert.match((await request(app).get('/space/bangalore').expect(200)).text, /PCW/);
   await request(app).get('/api/unknown').expect(404);
-});
-
-test('cdn path traversal is refused', async () => {
   await request(app).get('/cdn/..%2F..%2Fetc/passwd').expect(404);
 });
 
-test('events: split upcoming/past, RSVP and bookings', async () => {
-  const ev = store.collection('events');
-  const fut = new Date(Date.now() + 864e5 * 20).toISOString().slice(0, 10);
-  const up = await ev.insertOne({ city: 'bangalore', title: 'Future talk', date: fut, category: 'Talk' });
-  await ev.insertOne({ city: 'bangalore', title: 'Old talk', date: '2025-01-01', recordingUrl: 'https://youtu.be/x' });
-  await ev.insertOne({ city: 'guwahati', title: 'GHY meet', date: fut });
-  await ev.insertOne({ city: 'bangalore', title: 'Hidden', date: fut, published: false });
+test('youtube links are understood', () => {
+  for (const u of ['https://www.youtube.com/watch?v=NT-gVjZCct8', 'https://youtu.be/NT-gVjZCct8?si=x', 'https://www.youtube.com/embed/NT-gVjZCct8', 'https://youtube.com/shorts/NT-gVjZCct8', 'NT-gVjZCct8'])
+    assert.equal(youtubeId(u), 'NT-gVjZCct8', u);
+  assert.equal(youtubeId('https://vimeo.com/1'), '');
+});
 
+test('sample events are seeded once, split into upcoming/past, with videos', async () => {
   const b = (await request(app).get('/api/events?city=bangalore').expect(200)).body;
-  assert.deepEqual(b.upcoming.map((e) => e.title), ['Future talk']);
-  assert.deepEqual(b.past.map((e) => e.title), ['Old talk']);
+  assert.ok(b.upcoming.length >= 1 && b.past.length >= 1);
+  assert.ok(b.upcoming.every((e) => e.date >= b.today) && b.past.every((e) => e.date < b.today));
+  assert.ok(b.categories.includes('Talks'));
+  assert.ok(b.upcoming[0].sample);
+  const v = (await request(app).get('/api/videos').expect(200)).body;
+  assert.ok(v.videos.length >= 3 && v.videos.every((x) => x.youtubeId.length === 11));
   await request(app).get('/api/events?city=delhi').expect(404);
-  const rec = (await request(app).get('/api/events?recordings=1').expect(200)).body;
-  assert.deepEqual(rec.recordings.map((e) => e.title), ['Old talk']);
+});
 
-  await request(app).post('/api/rsvp').send({ eventId: up._id, name: 'Ravi', email: 'RAVI@x.org' }).expect(200);
-  await request(app).post('/api/rsvp').send({ eventId: up._id, name: 'Ravi', email: 'ravi@x.org' }).expect(200);
-  assert.equal(await store.collection('rsvps').count(), 1);
-  const past = b.past[0];
-  await request(app).post('/api/rsvp').send({ eventId: past.id, name: 'A', email: 'a@b.co' }).expect(400);
-  await request(app).post('/api/rsvp').send({ eventId: 'nope', name: 'A', email: 'a@b.co' }).expect(400);
-  const bad = await request(app).post('/api/rsvp').send({ eventId: up._id, email: 'x' }).expect(400);
+test('event detail, related and calendar file', async () => {
+  const b = (await request(app).get('/api/events?city=bangalore')).body;
+  const ev = b.upcoming[0];
+  const d = (await request(app).get(`/api/events/${ev.slug}`).expect(200)).body;
+  assert.equal(d.event.title, ev.title);
+  assert.ok(Array.isArray(d.related));
+  const ics = await request(app).get(`/api/events/${ev.slug}/ics`).expect(200);
+  assert.match(ics.text, /BEGIN:VEVENT/);
+  assert.match(ics.text, /DTSTART;TZID=Asia\/Kolkata:/);
+  await request(app).get('/api/events/nope-nope').expect(404);
+});
+
+test('RSVP: saves once, refuses closed / past / full', async () => {
+  const b = (await request(app).get('/api/events?city=bangalore')).body;
+  const open = b.upcoming.find((e) => e.rsvpStatus === 'open');
+  const closed = b.upcoming.find((e) => e.rsvpStatus === 'closed');
+  await request(app).post('/api/rsvp').send({ eventId: open.id, name: 'Ravi', email: 'RAVI@x.org', people: 2 }).expect(200);
+  await request(app).post('/api/rsvp').send({ eventId: open.id, name: 'Ravi', email: 'ravi@x.org' }).expect(200);
+  assert.equal(await store.collection('rsvps').count({ eventId: open.id }), 1);
+  await request(app).post('/api/rsvp').send({ eventId: closed.id, name: 'A', email: 'a@b.co' }).expect(400);
+  await request(app).post('/api/rsvp').send({ eventId: b.past[0].id, name: 'A', email: 'a@b.co' }).expect(400);
+  const bad = await request(app).post('/api/rsvp').send({ eventId: open.id, email: 'x' }).expect(400);
   assert.ok(bad.body.errors.name && bad.body.errors.email);
+});
 
-  await request(app).post('/api/bookings').send({ city: 'guwahati', name: 'Mina', email: 'm@x.org', phone: '9876543210', purpose: 'Host an event', date: fut, people: '30' }).expect(200);
-  const bb = await request(app).post('/api/bookings').send({ city: 'guwahati', name: 'Mina', email: 'm@x.org', phone: '98', purpose: 'x', date: '2020-01-01' }).expect(400);
-  assert.ok(bb.body.errors.phone && bb.body.errors.purpose && bb.body.errors.date);
-  assert.equal(await store.collection('bookings').count(), 1);
+test('newsletter + bookings', async () => {
+  await request(app).post('/api/newsletter').send({ email: 'Asha@Example.org' }).expect(200);
+  await request(app).post('/api/newsletter').send({ email: 'asha@example.org' }).expect(200);
+  await request(app).post('/api/newsletter').send({ email: 'nope' }).expect(400);
+  assert.equal(await store.collection('newsletter').count(), 1);
+  await request(app).post('/api/bookings').send({ city: 'guwahati', name: 'Mina', email: 'm@x.org', phone: '9876543210', purpose: 'Host an event', date: fut(10) }).expect(200);
+});
+
+test('admin: needs login, wrong password refused', async () => {
+  await request(app).get('/api/admin/stats').expect(401);
+  await request(app).get('/api/admin/events').expect(401);
+  await login('wrong').expect(401);
+});
+
+test('admin: events create / edit / capacity / delete, samples delete', async () => {
+  await login().expect(200);
+  const s = (await agent.get('/api/admin/stats').expect(200)).body;
+  assert.ok(s.samples > 0 && s.rsvps >= 1);
+
+  const bad = await agent.post('/api/admin/events').send({ city: 'x', title: '', date: 'no', youtubeUrl: 'https://vimeo.com/1', startTime: '10:00', endTime: '09:00' }).expect(400);
+  for (const k of ['city', 'title', 'date', 'youtubeUrl', 'endTime']) assert.ok(bad.body.errors[k], k);
+
+  const date = fut(30);
+  const ev = (
+    await agent
+      .post('/api/admin/events')
+      .send({ city: 'guwahati', title: 'Real Event', date, startTime: '10:00', endTime: '12:00', category: 'Talks', rsvp: 'open', capacity: 2, speakers: [{ name: 'Asha', role: 'Host' }, { name: '' }], youtubeUrl: 'https://youtu.be/Yw1oFCemAxE' })
+      .expect(200)
+  ).body;
+  assert.equal(ev.slug, `real-event-${date}`);
+  assert.equal(ev.speakers.length, 1);
+  // same title+date -> unique slug
+  const ev2 = (await agent.post('/api/admin/events').send({ city: 'guwahati', title: 'Real Event', date }).expect(200)).body;
+  assert.equal(ev2.slug, `real-event-${date}-2`);
+
+  // capacity 2: one RSVP for 2 people fills it
+  await request(app).post('/api/rsvp').send({ eventId: ev._id, name: 'A', email: 'a@x.org', people: 3 }).expect(400);
+  await request(app).post('/api/rsvp').send({ eventId: ev._id, name: 'A', email: 'a@x.org', people: 2 }).expect(200);
+  const d = (await request(app).get(`/api/events/${ev.slug}`)).body;
+  assert.equal(d.event.rsvpStatus, 'full');
+  await request(app).post('/api/rsvp').send({ eventId: ev._id, name: 'B', email: 'b@x.org' }).expect(400);
+
+  // edit: unpublish hides it
+  await agent.put(`/api/admin/events/${ev._id}`).send({ ...ev, title: 'Real Event Updated', published: false }).expect(200);
+  await request(app).get(`/api/events/${ev.slug}`).expect(404);
+  const r = (await agent.get(`/api/admin/rsvps?eventId=${ev._id}`).expect(200)).body.rsvps;
+  assert.equal(r[0].eventTitle, 'Real Event Updated');
+  const csv = await agent.get(`/api/admin/rsvps.csv?eventId=${ev._id}`).expect(200);
+  assert.match(csv.text, /a@x.org/);
+
+  await agent.delete(`/api/admin/events/${ev._id}`).expect(200);
+  assert.equal(await store.collection('rsvps').count({ eventId: ev._id }), 0);
+
+  const del = (await agent.post('/api/admin/events/delete-samples').expect(200)).body;
+  assert.ok(del.deleted > 0);
+  assert.equal((await agent.get('/api/admin/stats')).body.samples, 0);
+});
+
+test('admin: image upload, newsletter, bookings, password', async () => {
+  await login().expect(200);
+  const png = await sharp({ create: { width: 64, height: 32, channels: 3, background: '#f60' } }).png().toBuffer();
+  const up = (await agent.post('/api/admin/upload').attach('image', png, 'photo.png').expect(200)).body;
+  assert.match(up.url, /^\/uploads\/.+\.webp$/);
+  await request(app).get(up.url).expect(200);
+  await agent.post('/api/admin/upload').attach('image', Buffer.from('x'), 'a.txt').expect(400);
+
+  assert.equal((await agent.get('/api/admin/newsletter').expect(200)).body.subscribers.length, 1);
+  assert.match((await agent.get('/api/admin/newsletter.csv').expect(200)).text, /asha@example.org/);
+  const bk = (await agent.get('/api/admin/bookings').expect(200)).body.bookings[0];
+  await agent.patch(`/api/admin/bookings/${bk._id}`).send({ status: 'confirmed' }).expect(200);
+  await agent.patch(`/api/admin/bookings/${bk._id}`).send({ status: 'weird' }).expect(400);
+
+  await agent.post('/api/admin/password').send({ current: 'nope', next: 'NewPass123' }).expect(400);
+  await agent.post('/api/admin/password').send({ current: 'Pcw@2026', next: 'NewPass123' }).expect(200);
+  await agent.post('/api/admin/logout').expect(200);
+  await agent.get('/api/admin/me').expect(401);
+  await login('Pcw@2026').expect(401);
+  await login('NewPass123').expect(200);
+});
+
+test('city spaces: defaults, admin edit, validation', async () => {
+  const b = (await request(app).get('/api/spaces/bangalore').expect(200)).body;
+  assert.equal(b.cards.length, 3);
+  assert.ok(b.cards.every((c) => c.image.startsWith('/assets/')));
+  const g = (await request(app).get('/api/spaces/guwahati').expect(200)).body;
+  assert.ok(g.cards.every((c) => c.image === ''));
+  await request(app).get('/api/spaces/delhi').expect(404);
+  await request(app).put('/api/admin/spaces/guwahati').send(g).expect(401);
+
+  await login('NewPass123').expect(200);
+  const bad = await agent.put('/api/admin/spaces/guwahati').send({ ...g, title: '', cards: [{ title: '', image: 'javascript:x' }] }).expect(400);
+  assert.ok(bad.body.errors.title && bad.body.errors.card0);
+  g.cards[0].image = '/uploads/00000000-0000-0000-0000-000000000000.webp';
+  g.title = 'Our Guwahati Space';
+  await agent.put('/api/admin/spaces/guwahati').send(g).expect(200);
+  const g2 = (await request(app).get('/api/spaces/guwahati')).body;
+  assert.equal(g2.title, 'Our Guwahati Space');
+  assert.equal(g2.cards[0].image, g.cards[0].image);
+  // an image used by a space is not discarded
+  assert.equal((await agent.post('/api/admin/upload/discard').send({ url: g.cards[0].image })).body.removed, false);
+  assert.equal((await agent.get('/api/admin/spaces').expect(200)).body.spaces.length, 2);
+});
+
+async function loginAny() {
+  if ((await login('NewPass123')).status !== 200) await login().expect(200);
+}
+
+test('recordings: samples, tabs, event videos, link types', async () => {
+  const p = (await request(app).get('/api/recordings?type=podcast').expect(200)).body;
+  assert.equal(p.type, 'podcast');
+  assert.ok(p.items.length >= 3 && p.items.every((x) => x.type === 'podcast'));
+  assert.equal(p.items[0].media.kind, 'youtube'); // newest first
+  assert.ok(p.counts.report >= 2 && p.counts.video >= 0);
+  const v = (await request(app).get('/api/recordings?type=video').expect(200)).body;
+  assert.ok(v.items.every((x) => x.type === 'video' && (x.source !== 'event' || x.eventUrl.startsWith('/event/'))));
+  assert.equal(v.items.length, v.counts.video);
+  assert.equal((await request(app).get('/api/recordings?type=weird').expect(200)).body.type, 'podcast');
+
+  const { mediaFor } = await import('../src/lib/recordings.js');
+  assert.equal(mediaFor('https://open.spotify.com/episode/4rOoJ6Egrf8K2IrywzwOMk?si=1').embed, 'https://open.spotify.com/embed/episode/4rOoJ6Egrf8K2IrywzwOMk');
+  assert.equal(mediaFor('https://soundcloud.com/pcw/ep-1').kind, 'soundcloud');
+  assert.equal(mediaFor('https://podcasts.apple.com/in/podcast/x/id123?i=456').embed, 'https://embed.podcasts.apple.com/in/podcast/x/id123?i=456');
+  assert.equal(mediaFor('https://drive.google.com/file/d/AbC_12-x/view?usp=sharing').embed, 'https://drive.google.com/file/d/AbC_12-x/preview');
+  assert.equal(mediaFor('https://example.org/a.mp3').kind, 'audio');
+  assert.equal(mediaFor('https://example.org/report.pdf').kind, 'pdf');
+  assert.equal(mediaFor('https://example.org/page').kind, 'link');
+  assert.equal(mediaFor('javascript:alert(1)').kind, 'link'); // never embedded
+});
+
+test('admin: recordings create / edit / hide / delete, samples delete, image cleanup', async () => {
+  await request(app).get('/api/admin/recordings').expect(401);
+  await loginAny();
+  await agent.post('/api/admin/recordings').send({ type: 'podcast', title: '' }).expect(400);
+  await agent.post('/api/admin/recordings').send({ type: 'podcast', title: 'X', link: 'javascript:alert(1)' }).expect(400);
+  await agent.post('/api/admin/recordings').send({ type: 'video', title: 'X', link: 'https://open.spotify.com/episode/abc' }).expect(400);
+  const png = await sharp({ create: { width: 40, height: 30, channels: 3, background: '#0a0' } }).png().toBuffer();
+  const img = (await agent.post('/api/admin/upload').attach('image', png, 'c.png').expect(200)).body.url;
+  const made = (
+    await agent
+      .post('/api/admin/recordings')
+      .send({ type: 'podcast', title: 'Real Episode', number: '7', speakers: 'A, with B', link: 'https://open.spotify.com/episode/4rOoJ6Egrf8K2IrywzwOMk', image: img, date: '2099-01-01' })
+      .expect(200)
+  ).body;
+  let p = (await request(app).get('/api/recordings?type=podcast')).body;
+  assert.equal(p.items[0].title, 'Real Episode');
+  assert.equal(p.items[0].media.kind, 'spotify');
+
+  const img2 = (await agent.post('/api/admin/upload').attach('image', png, 'd.png').expect(200)).body.url;
+  await agent.put(`/api/admin/recordings/${made._id}`).send({ ...made, type: 'report', image: img2, published: false }).expect(200);
+  await request(app).get(img).expect(404); // replaced cover removed
+  p = (await request(app).get('/api/recordings?type=report')).body;
+  assert.ok(!p.items.some((x) => x.title === 'Real Episode')); // hidden
+  // discard keeps a cover that is in use
+  assert.equal((await agent.post('/api/admin/upload/discard').send({ url: img2 }).expect(200)).body.removed, false);
+
+  const del = (await agent.post('/api/admin/recordings/delete-samples').send({}).expect(200)).body;
+  assert.ok(del.deleted >= 5);
+  await agent.delete(`/api/admin/recordings/${made._id}`).expect(200);
+  await request(app).get(img2).expect(404);
+  assert.equal((await agent.get('/api/admin/recordings').expect(200)).body.recordings.length, 0);
+  assert.equal((await request(app).get('/api/recordings?type=podcast')).body.items.length, 0);
+});
+
+test('site settings: booking form link', async () => {
+  const d = (await request(app).get('/api/site').expect(200)).body;
+  assert.match(d.bookingUrl, /^https:\/\/docs\.google\.com\/forms\//);
+  await request(app).put('/api/admin/site').send({ bookingUrl: 'https://x.org' }).expect(401);
+  await loginAny();
+  await agent.put('/api/admin/site').send({ bookingUrl: 'http://not-https.org' }).expect(400);
+  await agent.put('/api/admin/site').send({ bookingUrl: 'https://forms.gle/abc' }).expect(200);
+  assert.equal((await request(app).get('/api/site')).body.bookingUrl, 'https://forms.gle/abc');
+  await agent.put('/api/admin/site').send({ bookingUrl: '' }).expect(200);
+  assert.equal((await request(app).get('/api/site')).body.bookingUrl, d.bookingUrl);
+});
+
+test('admin login follows .env (ADMIN_USERNAME / ADMIN_PASSWORD)', async () => {
+  const { ensureAdmin } = await import('../src/lib/auth.js');
+  assert.equal((await ensureAdmin(store, 'manthan', 'Selco@2026')).changed, true);
+  assert.equal((await ensureAdmin(store, 'manthan', 'Selco@2026')).changed, false);
+  const a = request.agent(app);
+  await a.post('/api/admin/login').send({ username: 'admin', password: 'Pcw@2026' }).expect(401);
+  await a.post('/api/admin/login').send({ username: 'manthan', password: 'Selco@2026' }).expect(200);
+  await a.get('/api/admin/me').expect(200);
+  assert.equal((await store.collection('admins').count()), 1);
+});
+
+test('event registration: our RSVP form, form link, closed, none', async () => {
+  // the previous test switched the login to the .env values below
+  const agent = request.agent(app);
+  await agent.post('/api/admin/login').send({ username: 'manthan', password: 'Selco@2026' }).expect(200);
+  const base = { city: 'guwahati', title: 'Reg Test', date: '2099-03-01', startTime: '10:00' };
+  // form link needs a valid link
+  let r = await agent.post('/api/admin/events').send({ ...base, rsvp: 'link' }).expect(400);
+  assert.ok(r.body.errors.rsvpUrl);
+  r = await agent.post('/api/admin/events').send({ ...base, rsvp: 'link', rsvpUrl: 'javascript:alert(1)' }).expect(400);
+  assert.ok(r.body.errors.rsvpUrl);
+  const ev = (await agent.post('/api/admin/events').send({ ...base, rsvp: 'link', rsvpUrl: 'https://forms.gle/abc123', capacity: 30 }).expect(200)).body;
+  assert.equal(ev.capacity, null); // seats only for our own form
+  let pub = (await request(app).get(`/api/events/${ev.slug}`).expect(200)).body.event;
+  assert.equal(pub.rsvpStatus, 'link');
+  assert.equal(pub.rsvpUrl, 'https://forms.gle/abc123');
+  const list = (await request(app).get('/api/events?city=guwahati').expect(200)).body;
+  assert.equal(list.upcoming.find((x) => x.slug === ev.slug).rsvpUrl, 'https://forms.gle/abc123');
+  // our RSVP endpoint refuses link events
+  r = await request(app).post('/api/rsvp').send({ eventId: ev._id, name: 'A', email: 'a@b.co', people: 1 }).expect(400);
+  assert.match(r.body.error, /form link/);
+
+  // switch to our own form with 1 seat
+  await agent.put(`/api/admin/events/${ev._id}`).send({ ...base, rsvp: 'open', rsvpUrl: 'https://forms.gle/abc123', capacity: 1 }).expect(200);
+  pub = (await request(app).get(`/api/events/${ev.slug}`)).body.event;
+  assert.equal(pub.rsvpStatus, 'open');
+  assert.equal(pub.rsvpUrl, ''); // old link not shown
+  await request(app).post('/api/rsvp').send({ eventId: ev._id, name: 'A', email: 'a@b.co', people: 1 }).expect(200);
+  assert.equal((await request(app).get(`/api/events/${ev.slug}`)).body.event.rsvpStatus, 'full');
+  // same email again (any capitals): told they are already registered, not counted twice
+  const again = (await request(app).post('/api/rsvp').send({ eventId: ev._id, name: 'A', email: 'A@B.CO', people: 1 }).expect(200)).body;
+  assert.equal(again.already, true);
+  assert.match(again.message, /already registered/);
+  assert.equal((await store.collection('rsvps').find({ eventId: ev._id })).length, 1);
+  // someone new: event is full
+  assert.match((await request(app).post('/api/rsvp').send({ eventId: ev._id, name: 'B', email: 'b@b.co', people: 1 }).expect(400)).body.error, /full/);
+
+  // closed and none
+  await agent.put(`/api/admin/events/${ev._id}`).send({ ...base, rsvp: 'closed' }).expect(200);
+  assert.equal((await request(app).get(`/api/events/${ev.slug}`)).body.event.rsvpStatus, 'closed');
+  await agent.put(`/api/admin/events/${ev._id}`).send({ ...base, rsvp: 'none' }).expect(200);
+  assert.equal((await request(app).get(`/api/events/${ev.slug}`)).body.event.rsvpStatus, 'none');
+  // past event with a link: no register button
+  const moved = (await agent.put(`/api/admin/events/${ev._id}`).send({ ...base, date: '2020-01-01', rsvp: 'link', rsvpUrl: 'https://forms.gle/abc123' }).expect(200)).body;
+  const past = (await request(app).get(`/api/events/${moved.slug}`).expect(200)).body.event;
+  assert.equal(past.rsvpStatus, 'over');
+  assert.equal(past.rsvpUrl, '');
+  // the old link still works and leads to the event
+  assert.equal((await request(app).get(`/api/events/${ev.slug}`).expect(200)).body.event.slug, moved.slug);
+  const redirect = await request(app).get(`/event/${ev.slug}`).expect(301);
+  assert.equal(redirect.headers.location, `/event/${moved.slug}`);
+  await agent.delete(`/api/admin/events/${ev._id}`).expect(200);
 });

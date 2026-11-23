@@ -1,12 +1,18 @@
 import { useMemo, useState } from 'react';
-import { formatDate } from '../api.js';
+import { formatDate, timeRange } from '../api.js';
 
 const WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const pad = (n) => String(n).padStart(2, '0');
 
 // Month calendar showing which days have events. Click a day to see its events.
 export default function Calendar({ events, today, onPick }) {
-  const [ym, setYm] = useState(() => today.slice(0, 7)); // "2026-11"
+  // start on this month; if nothing is left this month, jump to the month of the next event
+  const [ym, setYm] = useState(() => {
+    const now = today.slice(0, 7);
+    if (events.some((e) => e.date?.startsWith(now) && e.date >= today)) return now;
+    const next = events.filter((e) => e.date && e.date >= today).map((e) => e.date).sort()[0];
+    return next ? next.slice(0, 7) : now;
+  }); // "2026-11"
   const [selected, setSelected] = useState(null);
 
   const byDay = useMemo(() => {
@@ -86,7 +92,7 @@ export default function Calendar({ events, today, onPick }) {
                 <button onClick={() => onPick(e)}>
                   <span className="pcw-cal-date">{formatDate(e.date, { day: 'numeric', month: 'short' })}</span>
                   <span className="pcw-cal-ev">{e.title}</span>
-                  <span className="pcw-cal-time">{e.time}</span>
+                  <span className="pcw-cal-time">{timeRange(e)}</span>
                 </button>
               </li>
             ))}

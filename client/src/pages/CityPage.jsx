@@ -3,57 +3,20 @@ import SiteChrome from '../components/SiteChrome.jsx';
 import Braid from '../components/Braid.jsx';
 import EventCard from '../components/EventCard.jsx';
 import Calendar from '../components/Calendar.jsx';
-import FormModal from '../components/FormModal.jsx';
-import { api, formatDate } from '../api.js';
+import RsvpModal from '../components/RsvpModal.jsx';
+import CitySpace from '../components/CitySpace.jsx';
+import { api } from '../api.js';
 import { CITIES } from '../cities.js';
+import { useSite } from '../site.js';
+import { scrollToId } from '../motion.js';
 import '../styles/pages.css';
 
-const RSVP_FIELDS = [
-  { name: 'name', label: 'Your name', required: true },
-  { name: 'email', label: 'Email', type: 'email', required: true },
-  { name: 'phone', label: 'Phone', type: 'tel' },
-  { name: 'organisation', label: 'Organisation' },
-  { name: 'people', label: 'How many people?', type: 'number', min: 1, max: 50 },
+const MENU = [
+  ['upcoming', 'Upcoming events'],
+  ['past', 'Past events'],
+  ['calendar', 'Calendar'],
 ];
-
-const BOOK_FIELDS = [
-  { name: 'name', label: 'Your name', required: true },
-  { name: 'email', label: 'Email', type: 'email', required: true },
-  { name: 'phone', label: 'Phone', type: 'tel', required: true },
-  { name: 'organisation', label: 'Organisation' },
-  { name: 'purpose', label: 'What is it for?', type: 'select', required: true, options: ['Meet & co-create', 'Host an event', 'Workshop / training', 'Focus group', 'Other'] },
-  { name: 'date', label: 'Preferred date', type: 'date' },
-  { name: 'people', label: 'Number of people', type: 'number', min: 1, max: 500 },
-  { name: 'message', label: 'Tell us more', type: 'textarea' },
-];
-
-function ComingSoon({ cityName, onClose }) {
-  const btn = useRef(null);
-  useEffect(() => {
-    const prev = document.activeElement;
-    btn.current?.focus();
-    document.body.classList.add('pcw-modal-open');
-    const esc = (e) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', esc);
-    return () => {
-      document.body.classList.remove('pcw-modal-open');
-      window.removeEventListener('keydown', esc);
-      prev?.focus?.();
-    };
-  }, [onClose]);
-  return (
-    <div className="pcw-modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="pcw-modal pcw-soon" role="dialog" aria-modal="true" aria-labelledby="pcw-soon-title">
-        <span className="pcw-tag-dark">COMING SOON</span>
-        <h2 id="pcw-soon-title">Booking the {cityName} space</h2>
-        <p className="pcw-modal-intro">Space booking is opening soon. Check back here shortly.</p>
-        <button ref={btn} className="pcw-pill pcw-pill-pink" onClick={onClose}>
-          Okay
-        </button>
-      </div>
-    </div>
-  );
-}
+const scrollTo = (id) => scrollToId(id);
 
 function EventsMenu() {
   const [open, setOpen] = useState(false);
@@ -71,7 +34,7 @@ function EventsMenu() {
   }, [open]);
   const go = (id) => {
     setOpen(false);
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    scrollTo(id);
   };
   return (
     <div className="pcw-events-menu" ref={ref}>
@@ -83,15 +46,11 @@ function EventsMenu() {
       </button>
       {open && (
         <div className="pcw-dropdown" role="menu">
-          <button role="menuitem" onClick={() => go('upcoming')}>
-            Upcoming events
-          </button>
-          <button role="menuitem" onClick={() => go('past')}>
-            Past events
-          </button>
-          <button role="menuitem" onClick={() => go('calendar')}>
-            Calendar
-          </button>
+          {MENU.map(([id, label]) => (
+            <button key={id} role="menuitem" onClick={() => go(id)}>
+              {label}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -102,7 +61,9 @@ export default function CityPage({ cityKey }) {
   const city = CITIES[cityKey];
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
-  const [modal, setModal] = useState(null); // {kind:'rsvp', event} | {kind:'book'}
+  const [cat, setCat] = useState('');
+  const [modal, setModal] = useState(null); // {kind:'rsvp', event}
+  const { bookingUrl } = useSite();
 
   const load = useCallback(() => {
     setError('');
@@ -112,27 +73,25 @@ export default function CityPage({ cityKey }) {
   }, [cityKey]);
 
   useEffect(() => {
-    document.title = `${city.name} | PCW Space`;
     load();
   }, [city.name, load]);
 
-  const close = useCallback(() => setModal(null), []);
-  const pick = (e) => {
-    const el = document.getElementById(`event-${e.id}`);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    el?.classList.add('is-flash');
-    setTimeout(() => el?.classList.remove('is-flash'), 1600);
-  };
+  const close = useCallback(() => {
+    setModal(null);
+    load(); // refresh RSVP status (e.g. housefull)
+  }, [load]);
+  const byCat = (list) => (cat ? list.filter((e) => e.category === cat) : list);
+  const rsvp = (ev) => setModal({ kind: 'rsvp', event: ev });
 
   return (
     <SiteChrome active={cityKey}>
       <section className="pcw-city-hero">
-        <div className="pcw-subnav">
+        <nav className="pcw-subnav" aria-label={`${city.name} page`}>
           <EventsMenu />
-          <button className="pcw-pill pcw-pill-green" onClick={() => setModal({ kind: 'book' })}>
-            Book the space
-          </button>
-        </div>
+          <a className="pcw-subnav-link" href="#the-space" onClick={(e) => (e.preventDefault(), scrollTo('the-space'))}>
+            The space
+          </a>
+        </nav>
         <Braid className="pcw-city-braid" />
         <div className="pcw-wrap">
           <p className="pcw-eyebrow">PCW SPACE · {city.label}</p>
@@ -152,27 +111,42 @@ export default function CityPage({ cityKey }) {
 
       {data && (
         <>
+          {data.categories.length > 1 && (
+            <div className="pcw-wrap pcw-filter-bar">
+              <div className="pcw-chips" role="group" aria-label="Filter events by category">
+                <button className={!cat ? 'is-on' : ''} aria-pressed={!cat} onClick={() => setCat('')}>
+                  All
+                </button>
+                {data.categories.map((c) => (
+                  <button key={c} className={cat === c ? 'is-on' : ''} aria-pressed={cat === c} onClick={() => setCat(c)}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <section className="pcw-wrap pcw-block" id="upcoming">
             <h2 className="pcw-h2">Upcoming events</h2>
-            {data.upcoming.length ? (
+            {byCat(data.upcoming).length ? (
               <div className="pcw-cards">
-                {data.upcoming.map((e) => (
-                  <EventCard key={e.id} event={e} onRsvp={(ev) => setModal({ kind: 'rsvp', event: ev })} />
+                {byCat(data.upcoming).map((e) => (
+                  <EventCard key={e.id} event={e} onRsvp={rsvp} />
                 ))}
               </div>
             ) : (
               <div className="pcw-empty">
-                <p>No upcoming events in {city.name} right now. New events will be listed here.</p>
+                <p>{cat ? `No upcoming ${cat.toLowerCase()} right now.` : `No upcoming events in ${city.name} right now. New events will be listed here.`}</p>
               </div>
             )}
           </section>
 
           <section className="pcw-wrap pcw-block" id="past">
             <h2 className="pcw-h2">Past events</h2>
-            {data.past.length ? (
+            {byCat(data.past).length ? (
               <div className="pcw-cards">
-                {data.past.map((e) => (
-                  <EventCard key={e.id} event={e} past />
+                {byCat(data.past).map((e) => (
+                  <EventCard key={e.id} event={e} />
                 ))}
               </div>
             ) : (
@@ -184,26 +158,29 @@ export default function CityPage({ cityKey }) {
 
           <section className="pcw-wrap pcw-block" id="calendar">
             <h2 className="pcw-h2">Calendar</h2>
-            <Calendar events={[...data.upcoming, ...data.past]} today={data.today} onPick={pick} />
+            <Calendar events={[...data.upcoming, ...data.past]} today={data.today} onPick={(e) => (window.location.href = `/event/${e.slug}`)} />
           </section>
         </>
       )}
 
-      {modal?.kind === 'rsvp' && (
-        <FormModal
-          title={`RSVP: ${modal.event.title}`}
-          intro={[formatDate(modal.event.date), modal.event.time, modal.event.venue].filter(Boolean).join(' · ')}
-          fields={RSVP_FIELDS}
-          submitLabel="Confirm RSVP"
-          endpoint="/api/rsvp"
-          extra={{ eventId: modal.event.id }}
-          onClose={close}
-        />
-      )}
-      {/* Booking is "coming soon" for now. To switch the booking form back on, show
-          <FormModal title=... fields={BOOK_FIELDS} endpoint="/api/bookings" extra={{ city: cityKey }} />
-          here instead (the backend for it is already in place). */}
-      {modal?.kind === 'book' && <ComingSoon cityName={city.name} onClose={close} />}
+      <CitySpace cityKey={cityKey} cityName={city.name} />
+
+      <section className="pcw-wrap pcw-block" id="book">
+        <h2 className="pcw-h2">Book the space</h2>
+        <div className="pcw-book">
+          <div>
+            <span className="pcw-tag-pink">BOOKING FORM</span>
+            <p>
+              Host a workshop, a meeting or a community event at the PCW space in {city.name}. Fill in the booking form and the PCW team will get back to you.
+            </p>
+          </div>
+          <a className="pcw-pill pcw-pill-green" href={bookingUrl} target="_blank" rel="noopener noreferrer">
+            Book the space <span aria-hidden="true">↗</span>
+          </a>
+        </div>
+      </section>
+
+      {modal?.kind === 'rsvp' && <RsvpModal event={modal.event} onClose={close} />}
     </SiteChrome>
   );
 }
