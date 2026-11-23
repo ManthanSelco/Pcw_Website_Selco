@@ -70,7 +70,10 @@ if [[ ! -f "$APP_DIR/server/.env" ]]; then
   sed -i "s#^ADMIN_PASSWORD=.*#ADMIN_PASSWORD=$NEW_ADMIN_PASSWORD#" "$APP_DIR/server/.env"
 fi
 sed -i "s#^PORT=.*#PORT=$PORT#" "$APP_DIR/server/.env"
-grep -q '^SITE_URL=' "$APP_DIR/server/.env" && sed -i "s#^SITE_URL=.*#SITE_URL=https://$DOMAIN#" "$APP_DIR/server/.env" || echo "SITE_URL=https://$DOMAIN" >> "$APP_DIR/server/.env"
+# main address: set once; later changed only by add-domain.sh (so updates keep your own domain)
+if ! grep -qE '^SITE_URL=.+' "$APP_DIR/server/.env"; then
+  sed -i '/^SITE_URL=/d' "$APP_DIR/server/.env"; echo "SITE_URL=https://$DOMAIN" >> "$APP_DIR/server/.env"
+fi
 if [[ -n "$BUCKET" ]]; then
   sed -i "s#^S3_BUCKET=.*#S3_BUCKET=$BUCKET#; s#^S3_REGION=.*#S3_REGION=ap-south-1#" "$APP_DIR/server/.env"
 fi
@@ -80,7 +83,7 @@ fi
 chmod 600 "$APP_DIR/server/.env"
 chown -R "$RUN_USER":"$RUN_USER" "$APP_DIR"
 cd "$APP_DIR"
-sudo -u "$RUN_USER" npm install --prefix server --omit=optional --omit=dev --no-audit --no-fund
+sudo -u "$RUN_USER" npm install --prefix server --omit=dev --no-audit --no-fund
 sudo -u "$RUN_USER" npm install --prefix client --no-audit --no-fund
 sudo -u "$RUN_USER" npm run build --prefix client
 sudo -u "$RUN_USER" npm run fetch-images --prefix server || echo "(some images will be fetched on first visit)"
@@ -109,7 +112,13 @@ curl -fsS "http://127.0.0.1:$PORT/api/health" && echo || { echo "Website did not
 
 echo "==> 6/7 nginx for $DOMAIN"
 command -v nginx >/dev/null || apt-get install -y nginx
-cat > /etc/nginx/sites-available/pcw-mern <<EOF
+if grep -qs "ssl_certificate" /etc/nginx/sites-available/pcw-mern; then
+  # already live with HTTPS (and maybe your own domain via add-domain.sh): keep that setup
+  echo "nginx + HTTPS already set up - keeping it"
+  KEEP_NGINX=1
+else
+  KEEP_NGINX=0
+  cat > /etc/nginx/sites-available/pcw-mern <<EOF
 server {
     listen 80;
     server_name $DOMAIN;
@@ -124,15 +133,20 @@ server {
     }
 }
 EOF
-ln -sf /etc/nginx/sites-available/pcw-mern /etc/nginx/sites-enabled/pcw-mern
-nginx -t && systemctl reload nginx
+  ln -sf /etc/nginx/sites-available/pcw-mern /etc/nginx/sites-enabled/pcw-mern
+  nginx -t && systemctl reload nginx
+fi
 
 echo "==> 7/7 HTTPS"
-command -v certbot >/dev/null || apt-get install -y certbot python3-certbot-nginx
-if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --redirect; then
-  URL="https://$DOMAIN"
+if [[ "$KEEP_NGINX" == "1" ]]; then
+  URL="https://$(sed -n 's#^SITE_URL=https\?://##p' "$APP_DIR/server/.env")"
 else
-  echo "(HTTPS not set up now - check ports 80/443 in the EC2 Security Group)"; URL="http://$DOMAIN"
+  command -v certbot >/dev/null || apt-get install -y certbot python3-certbot-nginx
+  if certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email --redirect; then
+    URL="https://$DOMAIN"
+  else
+    echo "(HTTPS not set up now - check ports 80/443 in the EC2 Security Group)"; URL="http://$DOMAIN"
+  fi
 fi
 
 echo

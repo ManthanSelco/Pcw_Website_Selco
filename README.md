@@ -206,7 +206,11 @@ git clone https://github.com/ManthanSelco/Pcw_Website_Selco.git ~/pcw-src && cd 
 sudo bash deploy/install-mongodb.sh          # once per server; prints the MongoDB URI
 sudo bash deploy/setup-ec2.sh pcw.3-108-88-152.sslip.io 4100 "<MongoDB URI>" selco-application-media-bucket
 ```
-Update later: `cd ~/pcw-src && git pull && sudo bash deploy/setup-ec2.sh pcw.3-108-88-152.sslip.io 4100` (keeps `.env`, data and MongoDB).
+Update later: `cd ~/pcw-src && git pull && sudo bash deploy/setup-ec2.sh pcw.3-108-88-152.sslip.io 4100`
+(keeps `.env`, data, MongoDB, HTTPS and your own domain).
+
+Your own domain: the domain person adds an **A record** (`@` / `www` / `new` -> the server IP), then
+`sudo bash deploy/add-domain.sh thepcw.ai www.thepcw.ai` (checks DNS first, adds HTTPS, makes it the main address).
 Another website can live on the same server: its own folder, port, service and nginx file, and its own database in the same MongoDB.
 
 ## Google and AI search (SEO / AEO)
