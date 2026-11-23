@@ -48,16 +48,10 @@ mkdir -p "$APP_DIR"
 if [[ "$SRC_DIR" != "$APP_DIR" ]]; then
   rsync -a --delete --exclude node_modules --exclude data --exclude server/.env --exclude client/dist "$SRC_DIR/" "$APP_DIR/"
 fi
-NEW_ADMIN_PASSWORD=""
 if [[ ! -f "$APP_DIR/server/.env" ]]; then
   cp "$APP_DIR/server/.env.example" "$APP_DIR/server/.env"
-  # live site: no sample events, and a strong admin password instead of the default one
-  sed -i "s#^SEED_SAMPLES=.*#SEED_SAMPLES=false#" "$APP_DIR/server/.env"
-  NEW_ADMIN_PASSWORD="Pcw-$(openssl rand -hex 6)"
-  sed -i "s#^ADMIN_PASSWORD=.*#ADMIN_PASSWORD=$NEW_ADMIN_PASSWORD#" "$APP_DIR/server/.env"
 fi
 sed -i "s#^PORT=.*#PORT=$PORT#" "$APP_DIR/server/.env"
-grep -q '^SITE_URL=' "$APP_DIR/server/.env" && sed -i "s#^SITE_URL=.*#SITE_URL=https://$DOMAIN#" "$APP_DIR/server/.env" || echo "SITE_URL=https://$DOMAIN" >> "$APP_DIR/server/.env"
 if [[ -n "$MONGO" ]]; then
   grep -q '^MONGODB_URI=' "$APP_DIR/server/.env" && sed -i "s#^MONGODB_URI=.*#MONGODB_URI=$MONGO#" "$APP_DIR/server/.env" || echo "MONGODB_URI=$MONGO" >> "$APP_DIR/server/.env"
 fi
@@ -122,12 +116,6 @@ fi
 echo
 echo "============================================================"
 echo " PCW (MERN) is live:  $URL"
-echo " Admin:    $URL/admin"
-if [[ -n "$NEW_ADMIN_PASSWORD" ]]; then
-  echo "           ID: admin   Password: $NEW_ADMIN_PASSWORD   (save it; it is also in $APP_DIR/server/.env)"
-else
-  echo "           ID/password: as set in $APP_DIR/server/.env (ADMIN_USERNAME / ADMIN_PASSWORD)"
-fi
 echo " Logs:     sudo journalctl -u pcw-mern -f"
 echo " Restart:  sudo systemctl restart pcw-mern"
 echo "============================================================"

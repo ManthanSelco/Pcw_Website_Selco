@@ -2,12 +2,10 @@ import { useEffect } from 'react';
 import Navbar from '../sections/Navbar.jsx';
 import Footer from '../sections/Footer.jsx';
 import { connectNewsletter } from '../features/newsletter.js';
-import { useSiteMotion } from '../motion.js';
 
 // Nav + footer for the inner pages (same markup as the home page).
 // `active` = data-nav key of the menu item to underline, e.g. "bangalore".
-export default function SiteChrome({ active, light = false, children }) {
-  useSiteMotion();
+export default function SiteChrome({ active, children }) {
   useEffect(() => {
     document.body.classList.remove('nooverflow'); // home page's loader lock, not used here
     document.querySelectorAll(`[data-nav="${active}"]`).forEach((a) => {
@@ -44,7 +42,7 @@ export default function SiteChrome({ active, light = false, children }) {
   return (
     <>
       <Navbar />
-      <main className={light ? 'pcw-page pcw-page-light' : 'pcw-page'}>{children}</main>
+      <main className="pcw-page">{children}</main>
       <Footer />
     </>
   );

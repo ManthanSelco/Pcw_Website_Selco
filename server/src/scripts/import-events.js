@@ -1,15 +1,15 @@
 // npm run import-events -- path\to\events.csv     (or .json)
-// Adds / updates events from a file made from seed/events-template.csv
-// (open it in Excel, one row per event, save as CSV). Same city + date + title = updated.
-// Columns: city, date (YYYY-MM-DD or DD/MM/YYYY), startTime, endTime (HH:MM, 24h), title, tagline,
-//          category, venue, image (link), youtubeUrl, rsvp (open/link/closed/none), rsvpUrl (form link when rsvp=link), capacity, description
-// Add --replace to delete all existing events first. (The admin panel is easier for a few events.)
+// Adds / updates events from a file made from seed/events-template.csv (open it in Excel,
+// fill one row per event, save as CSV). Same city + date + title = updated, not duplicated.
+// Columns: city (bangalore|guwahati), date (YYYY-MM-DD), time, title, category, summary,
+//          venue, image (link), recordingUrl (YouTube etc), rsvpOpen (yes/no)
+// Add --replace to delete all existing events first.
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
 import { createStore } from '../lib/store.js';
 import { parseCsv } from '../lib/csv.js';
-import { cleanEvent, slugify } from '../lib/events.js';
+import { CITIES } from '../lib/cities.js';
 
 const arg = process.argv.find((a, i) => i > 1 && !a.startsWith('--'));
 // npm runs this inside server/, so resolve the path from where the command was typed
@@ -23,17 +23,12 @@ const rows = file.toLowerCase().endsWith('.json') ? JSON.parse(raw) : parseCsv(r
 
 const toDate = (v) => {
   v = String(v || '').trim();
-  const m = v.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/); // 12/12/2026 (day first)
-  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : v;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const m = v.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/); // 12/12/2026 (day first, Indian format)
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return '';
 };
-const toTime = (v) => {
-  v = String(v || '').trim();
-  const m = v.match(/^(\d{1,2})[:.](\d{2})\s*(am|pm)?$/i);
-  if (!m) return v;
-  let h = Number(m[1]);
-  if (m[3]) h = (h % 12) + (/pm/i.test(m[3]) ? 12 : 0);
-  return `${String(h).padStart(2, '0')}:${m[2]}`;
-};
+const yes = (v) => !/^(no|n|false|0|closed)$/i.test(String(v ?? 'yes').trim());
 
 const store = createStore(config);
 await store.connect();
@@ -44,30 +39,36 @@ if (process.argv.includes('--replace')) {
 }
 let added = 0, updated = 0, skipped = 0;
 for (const [i, r] of rows.entries()) {
-  const { data, errors } = cleanEvent({
-    ...r,
-    city: String(r.city || '').toLowerCase(),
+  const city = String(r.city || '').trim().toLowerCase();
+  const ev = {
+    city,
     date: toDate(r.date),
-    startTime: toTime(r.startTime),
-    endTime: toTime(r.endTime),
-    capacity: r.capacity || null,
-    rsvp: String(r.rsvp || (r.rsvpUrl ? 'link' : 'open')).toLowerCase(),
-    rsvpUrl: r.rsvpUrl || '',
-    published: !/^(no|false|0)$/i.test(String(r.published ?? 'yes')),
-  });
-  if (Object.keys(errors).length) {
-    console.log(`  row ${i + 2}: skipped - ${Object.entries(errors).map(([k, v]) => `${k}: ${v}`).join(', ')}`);
+    time: String(r.time || '').trim(),
+    title: String(r.title || '').trim(),
+    category: String(r.category || '').trim(),
+    summary: String(r.summary || '').trim(),
+    venue: String(r.venue || '').trim(),
+    image: String(r.image || '').trim(),
+    recordingUrl: String(r.recordingUrl || '').trim(),
+    rsvpOpen: yes(r.rsvpOpen),
+    published: yes(r.published),
+  };
+  if (!CITIES[city] || !ev.title) {
+    console.log(`  row ${i + 2}: skipped (city must be ${Object.keys(CITIES).join('/')}, title needed)`);
     skipped++;
     continue;
   }
-  const old = await events.findOne({ city: data.city, date: data.date, title: data.title });
+  if (r.date && !ev.date) {
+    console.log(`  row ${i + 2}: skipped (date "${r.date}" - use YYYY-MM-DD or DD/MM/YYYY)`);
+    skipped++;
+    continue;
+  }
+  const old = await events.findOne({ city, date: ev.date, title: ev.title });
   if (old) {
-    await events.updateOne({ _id: old._id }, { ...data, slug: old.slug, updatedAt: new Date().toISOString() });
+    await events.updateOne({ _id: old._id }, { ...ev, updatedAt: new Date().toISOString() });
     updated++;
   } else {
-    let slug = `${slugify(data.title)}-${data.date}`;
-    for (let n = 2; await events.findOne({ slug }); n++) slug = `${slugify(data.title)}-${data.date}-${n}`;
-    await events.insertOne({ ...data, slug, sample: false, createdAt: new Date().toISOString() });
+    await events.insertOne({ ...ev, createdAt: new Date().toISOString() });
     added++;
   }
 }

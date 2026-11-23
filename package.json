@@ -12,9 +12,7 @@
     "fetch-images": "npm run fetch-images --prefix server",
     "test": "npm test --prefix server",
     "export": "npm run export --prefix server --",
-    "import-events": "npm run import-events --prefix server --",
-    "reset-password": "npm run reset-password --prefix server --",
-    "images-to-s3": "npm run images-to-s3 --prefix server"
+    "import-events": "npm run import-events --prefix server --"
   },
   "engines": {
     "node": ">=20"
