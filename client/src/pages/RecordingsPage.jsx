@@ -12,7 +12,9 @@ const TABS = [
   { key: 'videos', type: 'video', label: 'Videos', unit: 'Videos', one: 'Video' },
 ];
 const PAGE = 12;
-const PLAYABLE = ['youtube', 'spotify', 'soundcloud', 'apple', 'drive', 'audio', 'video'];
+const PLAYABLE = ['youtube', 'vimeo', 'spotify', 'soundcloud', 'apple', 'drive', 'audio', 'video'];
+const mb = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n ? `${Math.max(1, Math.round(n / 1024))} KB` : '');
+const fileKind = (item) => (item.fileName || item.link || '').split('.').pop().toUpperCase().replace('DOCX', 'WORD').replace('DOC', 'WORD').replace('PPTX', 'POWERPOINT').replace('PPT', 'POWERPOINT');
 
 function tabFromPath() {
   const k = window.location.pathname.split('/')[2];
@@ -22,8 +24,11 @@ function tabFromPath() {
 const actionLabel = (item) => {
   const k = item.media?.kind;
   if (!item.link || k === 'none') return '';
-  if (item.type === 'report') return k === 'drive' ? 'Read report' : 'Open report';
-  if (k === 'youtube' || k === 'video') return 'Watch';
+  if (item.type === 'report') {
+    if (item.media?.uploaded) return k === 'pdf' ? 'Read report' : 'Download';
+    return k === 'drive' ? 'Read report' : 'Open report';
+  }
+  if (k === 'youtube' || k === 'video' || k === 'vimeo') return 'Watch';
   if (PLAYABLE.includes(k)) return 'Listen';
   return 'Open link';
 };
@@ -45,6 +50,12 @@ function Player({ item }) {
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen
         />
+      </div>
+    );
+  if (m.kind === 'vimeo')
+    return (
+      <div className="pcw-yt">
+        <iframe src={`${m.embed}?autoplay=1`} title={item.title} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen />
       </div>
     );
   if (m.kind === 'audio') return <audio className="pcw-rec-audio" src={m.src} controls autoPlay preload="none" />;
@@ -99,7 +110,7 @@ function PlayerModal({ item, tab, onClose }) {
 
 function sourceName(item) {
   return (
-    { youtube: 'YouTube', spotify: 'Spotify', soundcloud: 'SoundCloud', apple: 'Apple Podcasts', drive: 'Google Drive' }[item.media?.kind] || 'the original site'
+    { youtube: 'YouTube', vimeo: 'Vimeo', spotify: 'Spotify', soundcloud: 'SoundCloud', apple: 'Apple Podcasts', drive: 'Google Drive' }[item.media?.kind] || 'the original site'
   );
 }
 
@@ -152,6 +163,11 @@ function Card({ item, tab, onPlay }) {
           {item.number && <span className="pcw-rec-num">{item.number}.</span>} {item.title}
         </h3>
         {item.speakers && <p className="pcw-rec-line">{item.speakers}</p>}
+        {item.media?.uploaded && (
+          <p className="pcw-rec-file">
+            {[fileKind(item), mb(item.fileSize)].filter(Boolean).join(' · ')}
+          </p>
+        )}
         <div className="pcw-rec-foot">
           {item.date && <span className="pcw-rec-date">{formatDate(item.date)}</span>}
           {label ? (

@@ -32,6 +32,7 @@ export const config = {
     bucket: process.env.S3_BUCKET || '',
     region: process.env.S3_REGION || process.env.AWS_REGION || 'ap-south-1',
     prefix: process.env.S3_PREFIX ?? 'project/images/pcw',
+    docsPrefix: process.env.S3_DOCS_PREFIX ?? 'project/documents/pcw',
     publicUrl: process.env.S3_PUBLIC_URL || '',
     endpoint: process.env.S3_ENDPOINT || '',
   },

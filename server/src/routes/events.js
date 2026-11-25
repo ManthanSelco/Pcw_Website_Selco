@@ -81,7 +81,7 @@ export function eventRoutes(store) {
     try {
       const type = TYPES.includes(req.query.type) ? req.query.type : 'podcast';
       const all = (await store.collection('recordings').find({})).filter((x) => x.published !== false);
-      const eventVideos = (await published()).filter((e) => youtubeId(e.youtubeUrl || e.recordingUrl));
+      const eventVideos = (await published()).filter((e) => e.youtubeUrl || e.recordingUrl);
       const counts = {};
       for (const t of TYPES) counts[t] = all.filter((x) => x.type === t).length + (t === 'video' ? eventVideos.length : 0);
       let items = sortRecordings(all.filter((x) => x.type === type)).map(publicRecording);
@@ -99,7 +99,7 @@ export function eventRoutes(store) {
       const today = todayIST();
       const list = (await published())
         .map((e) => publicEvent(e, today))
-        .filter((e) => e.youtubeId)
+        .filter((e) => e.video)
         .reverse();
       res.json({ today, videos: list, categories: [...new Set(list.map((e) => e.category).filter(Boolean))].sort() });
     } catch (e) {

@@ -115,6 +115,9 @@ command -v nginx >/dev/null || apt-get install -y nginx
 if grep -qs "ssl_certificate" /etc/nginx/sites-available/pcw-mern; then
   # already live with HTTPS (and maybe your own domain via add-domain.sh): keep that setup
   echo "nginx + HTTPS already set up - keeping it"
+  # allow report uploads up to 50 MB (older setups had 25 MB)
+  sed -i -E 's/client_max_body_size [0-9]+m;/client_max_body_size 60m;/' /etc/nginx/sites-available/pcw-mern
+  nginx -t && systemctl reload nginx
   KEEP_NGINX=1
 else
   KEEP_NGINX=0
@@ -122,7 +125,7 @@ else
 server {
     listen 80;
     server_name $DOMAIN;
-    client_max_body_size 25m;
+    client_max_body_size 60m;
     location / {
         proxy_pass http://127.0.0.1:$PORT;
         proxy_http_version 1.1;

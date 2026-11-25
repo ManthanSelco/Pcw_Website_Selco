@@ -6,7 +6,7 @@ const DEFAULT_FORM = 'https://docs.google.com/forms/d/e/1FAIpQLScu0Rj-afE8XjFxZj
 export default function Settings() {
   const { call, notify, me } = useAdmin();
   const [url, setUrl] = useState(null);
-  const [seo, setSeo] = useState({ googleVerification: '', bingVerification: '' });
+  const [seo, setSeo] = useState({ googleVerification: '', bingVerification: '', sameAs: '' });
   const [seoErr, setSeoErr] = useState({});
   const [seoBusy, setSeoBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -16,7 +16,7 @@ export default function Settings() {
     call('/api/admin/site')
       .then((s) => {
         setUrl(s.bookingUrl);
-        setSeo({ googleVerification: s.googleVerification || '', bingVerification: s.bingVerification || '' });
+        setSeo({ googleVerification: s.googleVerification || '', bingVerification: s.bingVerification || '', sameAs: (s.sameAs || []).join('\n') });
       })
       .catch(() => setUrl(''));
   }, [call]);
@@ -42,7 +42,7 @@ export default function Settings() {
     setSeoBusy(true);
     try {
       const s = await call('/api/admin/site', { ...seo, bookingUrl: url || '' }, 'PUT');
-      setSeo({ googleVerification: s.googleVerification, bingVerification: s.bingVerification });
+      setSeo({ googleVerification: s.googleVerification, bingVerification: s.bingVerification, sameAs: (s.sameAs || []).join('\n') });
       notify('Search settings saved');
     } catch (x) {
       setSeoErr(x.errors || { googleVerification: x.message });
@@ -112,9 +112,16 @@ export default function Settings() {
           </label>
           {seoErr.bingVerification && <span className="adm-field-error">{seoErr.bingVerification}</span>}
         </div>
+        <div className={`adm-field is-wide ${seoErr.sameAs ? 'has-error' : ''}`}>
+          <label>
+            <span className="adm-label">PCW's official profiles (one link per line)</span>
+            <textarea rows={4} value={seo.sameAs} onChange={(e) => setSeo((s) => ({ ...s, sameAs: e.target.value }))} placeholder={'https://www.linkedin.com/company/…\nhttps://www.youtube.com/@…\nhttps://www.instagram.com/…'} />
+          </label>
+          {seoErr.sameAs ? <span className="adm-field-error">{seoErr.sameAs}</span> : <span className="adm-hint">LinkedIn, YouTube, Instagram, X… Google and AI tools use these to know they belong to PCW.</span>}
+        </div>
         <div className="adm-row">
           <button className="adm-btn adm-btn-primary" disabled={seoBusy || url === null}>
-            {seoBusy ? 'Saving…' : 'Save codes'}
+            {seoBusy ? 'Saving…' : 'Save'}
           </button>
         </div>
         <p className="adm-muted">Files for search engines (they update by themselves when you add events or recordings):</p>
@@ -124,6 +131,9 @@ export default function Settings() {
           </li>
           <li>
             <a href="/robots.txt" target="_blank" rel="noreferrer">{origin}/robots.txt</a>: lets Google and AI crawlers in, keeps the admin panel out
+          </li>
+          <li>
+            <a href="/faq" target="_blank" rel="noreferrer">{origin}/faq</a>: questions and answers (edit them in Admin &gt; FAQ)
           </li>
           <li>
             <a href="/llms.txt" target="_blank" rel="noreferrer">{origin}/llms.txt</a>: a short summary of PCW for AI assistants

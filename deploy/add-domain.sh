@@ -39,7 +39,7 @@ cp "$CONF" "$CONF.bak.$(date +%s)"
 
 proxy_block() {
 cat <<EOF
-    client_max_body_size 25m;
+    client_max_body_size 60m;
     location / {
         proxy_pass http://127.0.0.1:$PORT;
         proxy_http_version 1.1;

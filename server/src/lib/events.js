@@ -1,3 +1,4 @@
+import { youtubeId, mediaFor } from './media.js';
 // Event data helpers: cleaning admin input, public shape, YouTube links, slugs, calendar files.
 import { CITIES } from './cities.js';
 
@@ -15,17 +16,7 @@ export const CATEGORIES = [
 // open = our RSVP form, link = Google Form / any form link, closed, none = no registration
 export const RSVP_MODES = ['open', 'link', 'closed', 'none'];
 
-// Accepts youtube.com/watch?v=, youtu.be/, /embed/, /shorts/, /live/ or a bare 11-char id
-export function youtubeId(url) {
-  const s = String(url || '').trim();
-  if (!s) return '';
-  if (/^[A-Za-z0-9_-]{11}$/.test(s)) return s;
-  const m =
-    s.match(/[?&]v=([A-Za-z0-9_-]{11})/) ||
-    s.match(/youtu\.be\/([A-Za-z0-9_-]{11})/) ||
-    s.match(/youtube(?:-nocookie)?\.com\/(?:embed|shorts|live|v)\/([A-Za-z0-9_-]{11})/);
-  return m ? m[1] : '';
-}
+export { youtubeId, mediaFor } from './media.js';
 
 export function slugify(s) {
   return (
@@ -56,7 +47,7 @@ export function cleanEvent(b) {
     venue: str(b.venue, 200),
     image: str(b.image, 500),
     description: str(b.description, 20000),
-    youtubeUrl: str(b.youtubeUrl ?? b.recordingUrl, 300),
+    youtubeUrl: str(b.youtubeUrl ?? b.recordingUrl, 1000),
     rsvp: RSVP_MODES.includes(b.rsvp) ? b.rsvp : b.rsvpOpen === false ? 'closed' : 'open',
     rsvpUrl: str(b.rsvpUrl, 1000),
     capacity: b.capacity === '' || b.capacity == null ? null : Number(b.capacity),
@@ -72,7 +63,8 @@ export function cleanEvent(b) {
   if (data.startTime && !TIME_RE.test(data.startTime)) errors.startTime = 'Use HH:MM';
   if (data.endTime && !TIME_RE.test(data.endTime)) errors.endTime = 'Use HH:MM';
   if (data.startTime && data.endTime && data.endTime <= data.startTime) errors.endTime = 'End must be after start';
-  if (data.youtubeUrl && !youtubeId(data.youtubeUrl)) errors.youtubeUrl = 'Not a YouTube link';
+  // any video link: YouTube, Vimeo, Google Drive, .mp4, Facebook, a news site...
+  if (data.youtubeUrl && !/^https?:\/\/[^\s<>"]+\.[^\s<>"]+$/i.test(data.youtubeUrl)) errors.youtubeUrl = 'Paste a full link starting with https://';
   if (data.image && !/^(https?:\/\/|\/uploads\/|\/samples\/)/i.test(data.image)) errors.image = 'Invalid image';
   if (data.rsvp === 'link') {
     if (!data.rsvpUrl) errors.rsvpUrl = 'Paste the form link (Google Form or any form)';
@@ -113,6 +105,8 @@ export function publicEvent(e, today, taken = 0) {
     description: e.description || '',
     speakers: e.speakers || [],
     youtubeId: yt,
+    // the recording, whatever site it is on
+    video: e.youtubeUrl || e.recordingUrl ? { ...mediaFor(e.youtubeUrl || e.recordingUrl), url: e.youtubeUrl || e.recordingUrl } : null,
     rsvpStatus: rsvpStatus(e, today, taken),
     rsvpUrl: rsvpStatus(e, today, taken) === 'link' ? e.rsvpUrl : '',
     sample: !!e.sample,

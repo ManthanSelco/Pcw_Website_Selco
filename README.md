@@ -177,6 +177,17 @@ sudo bash deploy/setup-ec2.sh pcw.3-108-88-152.sslip.io 4100 "mongodb://USER:PAS
 npm test
 ```
 
+## Videos and reports
+
+- **Event recording**: the event's *Video / recording link* takes any link: YouTube, Vimeo, Google Drive and `.mp4`
+  play on the event page; other sites (Facebook, a news site...) show a "Watch the recording" button.
+  The video also appears under Recordings > Videos.
+- **Report upload** (Admin > Recordings > Report): PDF, Word (.doc/.docx) or PowerPoint (.ppt/.pptx), up to **50 MB**.
+  Stored in S3 under `project/documents/pcw/` (or `data/uploads/files` without S3) and served at `/files/...`
+  (PDF opens in the browser, Word/PowerPoint download with their original name). Bigger files: put them on
+  Google Drive / OneDrive / Dropbox, share as "Anyone with the link", and paste the link instead.
+  S3 needs `s3:DeleteObject` on `project/documents/pcw/*` too, so replaced/removed reports are deleted.
+
 ## Event registration
 
 Each event has a **Registration** choice in Admin > Events:
@@ -225,6 +236,12 @@ Report, Breadcrumbs, ContactPage) and its main text as plain HTML, so Google and
 | `/sitemap.xml` | All pages + every real event (updates by itself) |
 | `/robots.txt` | Lets Google, Bing and AI crawlers in; keeps `/admin` out |
 | `/llms.txt` | Short summary of PCW, key facts, upcoming events and recordings for AI assistants |
+
+Also built in:
+- **FAQ page** (`/faq`, edit in **Admin > FAQ**) with Google FAQ data; the questions also go into `llms.txt` and the home page text for AI assistants.
+- **One main address**: visits on `www.` or the sslip.io test address are sent (301) to `SITE_URL`, so Google sees one site.
+- **IndexNow**: when you add or change events, recordings, city spaces or the FAQ, Bing (which also feeds ChatGPT search) and other engines are told within a minute. Only runs when `SITE_URL` is a real https address. Turn off with `INDEXNOW=false`.
+- **Official profiles** (Admin > Settings): LinkedIn / YouTube / Instagram links, added to the Organization data so Google and AI tools connect them to PCW.
 
 Sample events and sample recordings are kept out of Google (`noindex`, not in the sitemap).
 

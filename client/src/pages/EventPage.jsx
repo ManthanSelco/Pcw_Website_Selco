@@ -3,7 +3,7 @@ import { scrollToId } from '../motion.js';
 import SiteChrome from '../components/SiteChrome.jsx';
 import EventCard from '../components/EventCard.jsx';
 import RsvpModal from '../components/RsvpModal.jsx';
-import YouTube from '../components/YouTube.jsx';
+import VideoPlayer from '../components/VideoPlayer.jsx';
 import { api, formatDate, timeRange } from '../api.js';
 import { CITIES } from '../cities.js';
 import '../styles/pages.css';
@@ -138,14 +138,14 @@ export default function EventPage({ slug }) {
             </div>
           </section>
 
-          {e.youtubeId && (
+          {e.video && (
             <section className="pcw-wrap pcw-detail-video" id="watch">
               <h2 className="pcw-h3">Watch</h2>
-              <YouTube id={e.youtubeId} title={e.title} poster={e.image} />
+              <VideoPlayer video={e.video} title={e.title} poster={e.image || (e.youtubeId ? `https://i.ytimg.com/vi/${e.youtubeId}/hqdefault.jpg` : '')} />
             </section>
           )}
 
-          {!e.youtubeId && e.image && (
+          {!e.video && e.image && (
             <div className="pcw-wrap pcw-detail-image">
               <img src={e.image} alt={e.title} />
             </div>

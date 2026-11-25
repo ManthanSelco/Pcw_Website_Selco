@@ -104,7 +104,7 @@ test('admin: events create / edit / capacity / delete, samples delete', async ()
   const s = (await agent.get('/api/admin/stats').expect(200)).body;
   assert.ok(s.samples > 0 && s.rsvps >= 1);
 
-  const bad = await agent.post('/api/admin/events').send({ city: 'x', title: '', date: 'no', youtubeUrl: 'https://vimeo.com/1', startTime: '10:00', endTime: '09:00' }).expect(400);
+  const bad = await agent.post('/api/admin/events').send({ city: 'x', title: '', date: 'no', youtubeUrl: 'not a link', startTime: '10:00', endTime: '09:00' }).expect(400);
   for (const k of ['city', 'title', 'date', 'youtubeUrl', 'endTime']) assert.ok(bad.body.errors[k], k);
 
   const date = fut(30);
@@ -219,7 +219,8 @@ test('admin: recordings create / edit / hide / delete, samples delete, image cle
   await loginAny();
   await agent.post('/api/admin/recordings').send({ type: 'podcast', title: '' }).expect(400);
   await agent.post('/api/admin/recordings').send({ type: 'podcast', title: 'X', link: 'javascript:alert(1)' }).expect(400);
-  await agent.post('/api/admin/recordings').send({ type: 'video', title: 'X', link: 'https://open.spotify.com/episode/abc' }).expect(400);
+  // video links can be from any site now; uploaded files only for reports
+  await agent.post('/api/admin/recordings').send({ type: 'video', title: 'X', link: '/files/0f8fad5b-d9cb-469f-a165-70867728950e.pdf' }).expect(400);
   const png = await sharp({ create: { width: 40, height: 30, channels: 3, background: '#0a0' } }).png().toBuffer();
   const img = (await agent.post('/api/admin/upload').attach('image', png, 'c.png').expect(200)).body.url;
   const made = (
@@ -322,4 +323,75 @@ test('event registration: our RSVP form, form link, closed, none', async () => {
   const redirect = await request(app).get(`/event/${ev.slug}`).expect(301);
   assert.equal(redirect.headers.location, `/event/${moved.slug}`);
   await agent.delete(`/api/admin/events/${ev._id}`).expect(200);
+});
+
+test('event video: any site (YouTube, Vimeo, Drive, other) is accepted and shown', async () => {
+  const a = request.agent(app);
+  await a.post('/api/admin/login').send({ username: 'manthan', password: 'Selco@2026' }).expect(200);
+  const base = { city: 'bangalore', title: 'Video Any Site', date: '2020-02-02', rsvp: 'none' };
+  await a.post('/api/admin/events').send({ ...base, youtubeUrl: 'javascript:alert(1)' }).expect(400);
+  const cases = [
+    ['https://vimeo.com/123456789', 'vimeo'],
+    ['https://drive.google.com/file/d/AbC_12-x/view', 'drive'],
+    ['https://example.org/talk.mp4', 'video'],
+    ['https://www.facebook.com/selco/videos/123', 'link'],
+  ];
+  for (const [url, kind] of cases) {
+    const ev = (await a.post('/api/admin/events').send({ ...base, title: `Video ${kind}`, youtubeUrl: url }).expect(200)).body;
+    const pub = (await request(app).get(`/api/events/${ev.slug}`).expect(200)).body.event;
+    assert.equal(pub.video.kind, kind);
+    assert.equal(pub.video.url, url);
+    const vids = (await request(app).get('/api/recordings?type=video')).body.items;
+    assert.ok(vids.some((x) => x.title === `Video ${kind}` && x.link === url), kind);
+    await a.delete(`/api/admin/events/${ev._id}`).expect(200);
+  }
+});
+
+test('report upload: PDF/Word/PowerPoint only, 50 MB limit, served with its name, cleaned up', async () => {
+  const a = request.agent(app);
+  await a.post('/api/admin/login').send({ username: 'manthan', password: 'Selco@2026' }).expect(200);
+  await request(app).post('/api/admin/upload-doc').attach('file', Buffer.from('%PDF-1.4 x'), 'r.pdf').expect(401);
+  // wrong content for the extension
+  let r = await a.post('/api/admin/upload-doc').attach('file', Buffer.from('hello'), 'fake.pdf').expect(400);
+  assert.match(r.body.error, /PDF, Word/);
+  await a.post('/api/admin/upload-doc').attach('file', Buffer.from('%PDF-1.4'), 'x.exe').expect(400);
+  // too big: told to use Google Drive
+  r = await a.post('/api/admin/upload-doc').attach('file', Buffer.alloc(50 * 1024 * 1024 + 10, 0x25), 'big.pdf').expect(400);
+  assert.match(r.body.error, /bigger than 50 MB.*Google Drive/);
+
+  const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(2000, 0x20)]);
+  const up = (await a.post('/api/admin/upload-doc').attach('file', pdf, 'Annual Report 2026.pdf').expect(200)).body;
+  assert.match(up.url, /^\/files\/[a-f0-9-]{36}\.pdf$/);
+  assert.equal(up.name, 'Annual Report 2026.pdf');
+  const docx = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('....word/document.xml....')]);
+  const upDocx = (await a.post('/api/admin/upload-doc').attach('file', docx, 'Notes.docx').expect(200)).body;
+  const ole = Buffer.concat([Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]), Buffer.alloc(100)]);
+  const upPpt = (await a.post('/api/admin/upload-doc').attach('file', ole, 'Deck.ppt').expect(200)).body;
+
+  // not linked to anything yet: not public
+  await request(app).get(up.url).expect(404);
+  const rec = (await a.post('/api/admin/recordings').send({ type: 'report', title: 'Annual Report', link: up.url, fileName: up.name, fileSize: up.size }).expect(200)).body;
+  const file = await request(app).get(up.url).expect(200);
+  assert.equal(file.headers['content-type'], 'application/pdf');
+  assert.match(file.headers['content-disposition'], /^inline; filename="Annual Report 2026\.pdf"/);
+  const pub = (await request(app).get('/api/recordings?type=report')).body.items.find((x) => x.title === 'Annual Report');
+  assert.equal(pub.media.kind, 'pdf');
+  assert.equal(pub.fileName, 'Annual Report 2026.pdf');
+  // uploaded files only for reports
+  await a.post('/api/admin/recordings').send({ type: 'podcast', title: 'X', link: up.url }).expect(400);
+
+  // replace with the Word file: old PDF removed
+  await a.put(`/api/admin/recordings/${rec._id}`).send({ ...rec, link: upDocx.url, fileName: upDocx.name, fileSize: upDocx.size }).expect(200);
+  const w = await request(app).get(upDocx.url).expect(200);
+  assert.match(w.headers['content-disposition'], /^attachment; filename="Notes\.docx"/);
+  const dir = path.join(tmp, 'uploads', 'files');
+  assert.ok(!fs.existsSync(path.join(dir, up.url.split('/').pop())));
+  // switching to a Google Drive link removes the uploaded file and its name
+  const linked = (await a.put(`/api/admin/recordings/${rec._id}`).send({ ...rec, link: 'https://drive.google.com/file/d/Abc123/view', fileName: 'x', fileSize: 5 }).expect(200)).body;
+  assert.equal(linked.fileName, '');
+  assert.ok(!fs.existsSync(path.join(dir, upDocx.url.split('/').pop())));
+  // unused upload (form cancelled) is discarded; used ones are kept
+  assert.equal((await a.post('/api/admin/upload-doc/discard').send({ url: upPpt.url }).expect(200)).body.removed, true);
+  assert.ok(!fs.existsSync(path.join(dir, upPpt.url.split('/').pop())));
+  await a.delete(`/api/admin/recordings/${rec._id}`).expect(200);
 });

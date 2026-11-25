@@ -9,6 +9,8 @@ import { toCsv } from '../lib/csv.js';
 import { getSpace, cleanSpace, spaceCities } from '../lib/spaces.js';
 import { TYPES, TYPE_LABELS, cleanRecording, mediaFor, uniqueSlugFor, sortRecordings } from '../lib/recordings.js';
 import { getSite, cleanSite } from '../lib/site.js';
+import { getFaq, cleanFaq, DEFAULT_FAQ } from '../lib/faq.js';
+import { docNameFromUrl } from '../lib/storage.js';
 
 const BOOKING_STATUSES = ['new', 'contacted', 'confirmed', 'declined'];
 
@@ -44,7 +46,7 @@ export function adminRoutes(store, auth, { storage }) {
         upcoming: all.filter((e) => e.date >= today).length,
         past: all.filter((e) => e.date < today).length,
         samples: all.filter((e) => e.sample).length,
-        videos: all.filter((e) => youtubeId(e.youtubeUrl || e.recordingUrl)).length,
+        videos: all.filter((e) => e.youtubeUrl || e.recordingUrl).length,
         rsvps: await rsvps.count(),
         newsletter: await newsletter.count(),
         bookings: await bookings.count(),
@@ -69,6 +71,7 @@ export function adminRoutes(store, auth, { storage }) {
         when: e.date >= today ? 'upcoming' : 'past',
         rsvpCount: counts[e._id] || 0,
         youtubeId: youtubeId(e.youtubeUrl || e.recordingUrl),
+        hasVideo: !!(e.youtubeUrl || e.recordingUrl),
       }));
       res.json({ events: list, today, cities: CITIES, categories: CATEGORIES, rsvpModes: RSVP_MODES });
     })
@@ -170,6 +173,58 @@ export function adminRoutes(store, auth, { storage }) {
     })
   );
 
+  // ---------- report upload: PDF, Word, PowerPoint up to 50 MB -> S3 (project/documents/pcw) or disk ----------
+  const DOC_MAX_MB = 50;
+  const docUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: DOC_MAX_MB * 1024 * 1024 } });
+  // check the file really is what its name says (first bytes of the file)
+  function docType(buf, original) {
+    const ext = String(original || '').toLowerCase().split('.').pop();
+    const head = buf.subarray(0, 8);
+    const isPdf = buf.subarray(0, 5).toString('latin1') === '%PDF-';
+    const isZip = head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
+    const isOle = head.equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]));
+    const inZip = (dir) => buf.indexOf(Buffer.from(dir), 0, 'latin1') !== -1;
+    if (ext === 'pdf' && isPdf) return 'pdf';
+    if (ext === 'docx' && isZip && inZip('word/')) return 'docx';
+    if (ext === 'pptx' && isZip && inZip('ppt/')) return 'pptx';
+    if ((ext === 'doc' || ext === 'ppt') && isOle) return ext;
+    return '';
+  }
+  function removeDoc(url) {
+    if (!docNameFromUrl(url)) return;
+    storage.removeDoc(url).catch((e) => console.error('[files] could not delete', url, e.message));
+  }
+  r.post('/upload-doc', (req, res) =>
+    docUpload.single('file')(req, res, async (err) => {
+      if (err)
+        return res.status(400).json({
+          error:
+            err.code === 'LIMIT_FILE_SIZE'
+              ? `This file is bigger than ${DOC_MAX_MB} MB. Put it on Google Drive (or another sharing site), set sharing to "Anyone with the link", and paste the link instead.`
+              : err.message,
+        });
+      if (!req.file) return res.status(400).json({ error: 'No file received' });
+      const type = docType(req.file.buffer, req.file.originalname);
+      if (!type) return res.status(400).json({ error: 'Please upload a PDF, Word (.doc/.docx) or PowerPoint (.ppt/.pptx) file' });
+      try {
+        const url = await storage.saveDoc(`${crypto.randomUUID()}.${type}`, req.file.buffer);
+        res.json({ url, name: String(req.file.originalname).slice(0, 150), size: req.file.size, type });
+      } catch (e) {
+        console.error('[files] upload failed:', e.message);
+        res.status(502).json({ error: storage.kind === 's3' ? 'Could not save the file to S3. Check the S3 settings.' : 'Could not save the file' });
+      }
+    })
+  );
+  r.post(
+    '/upload-doc/discard',
+    h(async (req, res) => {
+      const url = String(req.body?.url || '');
+      const used = (await recordings.find({})).some((x) => x.link === url);
+      if (!used) removeDoc(url);
+      res.json({ ok: true, removed: !used && !!docNameFromUrl(url) });
+    })
+  );
+
   // image uploaded in the editor but not used (form cancelled / photo replaced before saving)
   r.post(
     '/upload/discard',
@@ -231,6 +286,7 @@ export function adminRoutes(store, auth, { storage }) {
       if (Object.keys(errors).length) return res.status(400).json({ error: 'Please check the highlighted fields', errors });
       data.slug = old.title === data.title && old.slug ? old.slug : uniqueSlugFor(await recordings.find({}), data.title, old._id);
       if (old.image && old.image !== data.image) removeUpload(old.image);
+      if (old.link && old.link !== data.link) removeDoc(old.link);
       res.json(await recordings.updateOne({ _id: old._id }, { ...data, updatedAt: new Date().toISOString() }));
     })
   );
@@ -240,6 +296,7 @@ export function adminRoutes(store, auth, { storage }) {
       const old = await recordings.findOne({ _id: req.params.id });
       if (!old) return res.status(404).json({ error: 'Not found' });
       removeUpload(old.image);
+      removeDoc(old.link);
       await recordings.deleteOne({ _id: old._id });
       res.json({ ok: true });
     })
@@ -254,6 +311,18 @@ export function adminRoutes(store, auth, { storage }) {
         n++;
       }
       res.json({ ok: true, deleted: n });
+    })
+  );
+
+  // ---------- FAQ ----------
+  r.get('/faq', h(async (req, res) => res.json({ items: await getFaq(store), defaults: DEFAULT_FAQ })));
+  r.put(
+    '/faq',
+    h(async (req, res) => {
+      const { data, errors } = cleanFaq(req.body || {});
+      if (Object.keys(errors).length) return res.status(400).json({ error: 'Please fill in both the question and the answer', errors });
+      await store.collection('settings').updateOne({ _id: 'faq' }, { ...data, updatedAt: new Date().toISOString() }, { upsert: true });
+      res.json({ items: await getFaq(store) });
     })
   );
 

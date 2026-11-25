@@ -980,3 +980,112 @@ body.adm-body {
   align-items: center;
   min-height: 44px;
 }
+.adm-faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.adm-faq-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+}
+.adm-faq-num {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #205c40;
+  color: #feffe8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  margin-top: 26px;
+}
+.adm-faq-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.adm-faq-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 22px;
+}
+.adm-faq-foot {
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+@media (max-width: 640px) {
+  .adm-faq-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .adm-faq-num {
+    margin-top: 0;
+  }
+  .adm-faq-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 0;
+  }
+}
+.adm-doc-drop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+.adm-doc-bar {
+  flex-basis: 100%;
+  height: 6px;
+  border-radius: 6px;
+  background: #e8e4d5;
+  overflow: hidden;
+}
+.adm-doc-bar i {
+  display: block;
+  height: 100%;
+  background: #205c40;
+  transition: width 0.2s;
+}
+.adm-doc-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 12px 14px;
+  border: 1px solid #d9d4c3;
+  border-radius: 14px;
+  background: #fff;
+}
+.adm-doc-icon {
+  flex: none;
+  min-width: 48px;
+  height: 48px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: #205c40;
+  color: #feffe8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+.adm-doc-name {
+  flex: 1 1 160px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-wrap: anywhere;
+}
+.adm-doc-name small {
+  color: #5f6f66;
+}
+.adm-doc-note {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+}

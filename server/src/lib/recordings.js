@@ -2,41 +2,12 @@
 // Each item has a link (YouTube, Spotify, SoundCloud, Apple Podcasts, Google Drive,
 // an .mp3/.mp4/.pdf file, or any web page) and an optional cover photo.
 import { CITIES } from './cities.js';
-import { youtubeId, slugify } from './events.js';
+import { slugify } from './events.js';
+import { youtubeId, mediaFor } from './media.js';
+export { mediaFor };
 
 export const TYPES = ['podcast', 'report', 'video'];
 export const TYPE_LABELS = { podcast: 'Podcasts', report: 'Reports', video: 'Videos' };
-
-// What the website can do with a link: play it on the site, or open it in a new tab.
-export function mediaFor(link) {
-  const url = String(link || '').trim();
-  if (!url) return { kind: 'none', embed: '' };
-  const yt = youtubeId(url);
-  if (yt) return { kind: 'youtube', youtubeId: yt, embed: `https://www.youtube-nocookie.com/embed/${yt}` };
-  let u;
-  try {
-    u = new URL(url);
-  } catch {
-    return { kind: 'none', embed: '' };
-  }
-  const host = u.hostname.replace(/^www\./, '');
-  const p = u.pathname;
-  if (host === 'open.spotify.com') {
-    const m = p.match(/^\/(?:intl-[a-z-]+\/)?(episode|show|track|playlist|album)\/([A-Za-z0-9]+)/);
-    if (m) return { kind: 'spotify', embed: `https://open.spotify.com/embed/${m[1]}/${m[2]}`, tall: m[1] !== 'episode' && m[1] !== 'track' };
-  }
-  if (host === 'soundcloud.com' || host === 'on.soundcloud.com')
-    return { kind: 'soundcloud', embed: `https://w.soundcloud.com/player/?url=${encodeURIComponent(url)}&color=%23205c40&visual=false` };
-  if (host === 'podcasts.apple.com') return { kind: 'apple', embed: `https://embed.podcasts.apple.com${p}${u.search}` };
-  if (host === 'drive.google.com') {
-    const m = p.match(/\/file\/d\/([A-Za-z0-9_-]+)/) || [null, u.searchParams.get('id')];
-    if (m[1]) return { kind: 'drive', embed: `https://drive.google.com/file/d/${m[1]}/preview` };
-  }
-  if (/\.(mp3|m4a|wav|ogg|aac)$/i.test(p)) return { kind: 'audio', src: url, embed: '' };
-  if (/\.(mp4|webm|mov)$/i.test(p)) return { kind: 'video', src: url, embed: '' };
-  if (/\.pdf$/i.test(p)) return { kind: 'pdf', embed: '' };
-  return { kind: 'link', embed: '' };
-}
 
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 
@@ -54,15 +25,22 @@ export function cleanRecording(body) {
     image: str(body.image, 500),
     description: str(body.description, 3000),
     published: body.published !== false && body.published !== 'false',
+    // uploaded report: original file name + size (shown on the card, used as the download name)
+    fileName: str(body.fileName, 150),
+    fileSize: Number.isFinite(Number(body.fileSize)) ? Math.max(0, Math.round(Number(body.fileSize))) : 0,
   };
   if (!TYPES.includes(data.type)) errors.type = 'Choose Podcast, Report or Video';
   if (!data.title) errors.title = 'Title is required';
   if (data.number && !/^\d{1,6}$/.test(data.number)) errors.number = 'Numbers only (or leave empty)';
   if (data.city && !CITIES[data.city]) errors.city = 'Unknown city';
   if (data.date && !/^\d{4}-\d{2}-\d{2}$/.test(data.date)) errors.date = 'Choose a valid date';
-  if (data.link && !/^https?:\/\/[^\s]+$/i.test(data.link)) errors.link = 'Paste a full link starting with https://';
-  if (data.type === 'video' && data.link && !['youtube', 'video', 'drive'].includes(mediaFor(data.link).kind))
-    errors.link = 'For videos use a YouTube link, a Google Drive link or an .mp4 file link';
+  const uploaded = /^\/files\/[a-f0-9-]{36}\.(pdf|docx?|pptx?)$/i.test(data.link);
+  if (data.link && !uploaded && !/^https?:\/\/[^\s<>"]+\.[^\s<>"]+$/i.test(data.link)) errors.link = 'Paste a full link starting with https://';
+  if (uploaded && data.type !== 'report') errors.link = 'Uploaded files are only for reports';
+  if (!uploaded) {
+    data.fileName = '';
+    data.fileSize = 0;
+  }
   if (data.image && !/^(https?:\/\/|\/uploads\/|\/samples\/|\/assets\/)/i.test(data.image)) errors.image = 'Invalid image';
   return { data, errors };
 }
@@ -83,6 +61,8 @@ export function publicRecording(x) {
     image: x.image || '',
     description: x.description || '',
     media,
+    fileName: x.fileName || '',
+    fileSize: x.fileSize || 0,
     sample: !!x.sample,
     source: 'recording',
   };
@@ -101,7 +81,7 @@ export function eventAsVideo(e) {
     category: e.category || '',
     city: e.city || '',
     date: e.date || '',
-    link: `https://www.youtube.com/watch?v=${youtubeId(e.youtubeUrl || e.recordingUrl)}`,
+    link: youtubeId(e.youtubeUrl || e.recordingUrl) ? `https://www.youtube.com/watch?v=${youtubeId(e.youtubeUrl || e.recordingUrl)}` : e.youtubeUrl || e.recordingUrl,
     image: e.image || '',
     description: names ? e.tagline || '' : '',
     media: mediaFor(e.youtubeUrl || e.recordingUrl),

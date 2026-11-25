@@ -7,6 +7,7 @@ import request from 'supertest';
 import { boot } from '../src/boot.js';
 
 let app, store, tmp;
+const pings = [];
 const TEMPLATE = '<!doctype html><html lang="en"><head><title>PCW</title><meta name="description" content="old"></head><body><div id="root"></div></body></html>';
 
 before(async () => {
@@ -25,6 +26,8 @@ before(async () => {
     adminPassword: 'Pcw@2026',
     seedSamples: true,
     siteUrl: 'https://pcw.example.org',
+    indexNow: async (paths) => pings.push(paths),
+    indexNowDelayMs: 0,
   }));
   await store.collection('events').insertOne({
     slug: 'solar-for-livelihoods-2099-01-10',
@@ -123,4 +126,66 @@ test('admin: Google / Bing verification codes', async () => {
   assert.match(html, /<meta name="google-site-verification" content="abc_DEF-123">/);
   assert.match(html, /<meta name="msvalidate.01" content="B1NG">/);
   await a.put('/api/admin/site').send({ googleVerification: '"><script>' }).expect(400);
+});
+
+test('FAQ page: default answers, FAQPage data, llms.txt, admin edit', async () => {
+  const html = (await request(app).get('/faq').set('Host', 'pcw.example.org').expect(200)).text;
+  assert.match(html, /<title>FAQ: Platform for Collective Wisdom \(PCW\)<\/title>/);
+  const faqLd = ldOf(html)['@graph'].find((x) => x['@type'] === 'FAQPage');
+  assert.ok(faqLd.mainEntity.length >= 8);
+  assert.equal(faqLd.mainEntity[0]['@type'], 'Question');
+  assert.match((await request(app).get('/llms.txt').set('Host', 'pcw.example.org')).text, /## Frequently asked questions\n### What is the Platform for Collective Wisdom/);
+  assert.match((await request(app).get('/sitemap.xml').set('Host', 'pcw.example.org')).text, /<loc>https:\/\/pcw\.example\.org\/faq<\/loc>/);
+
+  const a = request.agent(app);
+  await a.post('/api/admin/login').send({ username: 'admin', password: 'Pcw@2026' }).expect(200);
+  await a.put('/api/admin/faq').send({ items: [{ q: 'Only question?', a: '' }] }).expect(400);
+  await a.put('/api/admin/faq').send({ items: [{ q: 'Is it <b>free</b>?', a: 'Yes.' }, { q: '', a: '' }] }).expect(200);
+  assert.deepEqual((await request(app).get('/api/faq').expect(200)).body.items, [{ q: 'Is it <b>free</b>?', a: 'Yes.' }]);
+  const after = (await request(app).get('/faq').set('Host', 'pcw.example.org')).text;
+  assert.match(after, /Is it &lt;b&gt;free&lt;\/b&gt;\?/);
+  assert.ok(!after.includes('<b>free</b>'));
+});
+
+test('official profiles (sameAs) go into Organization data and llms.txt', async () => {
+  const a = request.agent(app);
+  await a.post('/api/admin/login').send({ username: 'admin', password: 'Pcw@2026' }).expect(200);
+  await a.put('/api/admin/site').send({ sameAs: 'http://insecure.example' }).expect(400);
+  await a.put('/api/admin/site').send({ sameAs: 'https://www.linkedin.com/company/pcw\nhttps://www.youtube.com/@pcw' }).expect(200);
+  const org = ldOf((await request(app).get('/').set('Host', 'pcw.example.org')).text)['@graph'].find((x) => x['@type'] === 'Organization');
+  assert.deepEqual(org.sameAs, ['https://www.linkedin.com/company/pcw', 'https://www.youtube.com/@pcw']);
+  assert.match((await request(app).get('/llms.txt').set('Host', 'pcw.example.org')).text, /Official profiles: https:\/\/www\.linkedin\.com\/company\/pcw/);
+});
+
+test('one main address: other names redirect (301), API and internal checks do not', async () => {
+  const r = await request(app).get('/space/bangalore?x=1').set('Host', 'www.pcw.example.org').expect(301);
+  assert.equal(r.headers.location, 'https://pcw.example.org/space/bangalore?x=1');
+  await request(app).get('/').set('Host', 'pcw.3-108-88-152.sslip.io').expect(301);
+  await request(app).get('/').set('Host', 'pcw.example.org').expect(200);
+  await request(app).get('/api/health').set('Host', 'www.pcw.example.org').expect(200);
+  await request(app).get('/').set('Host', '127.0.0.1:4100').expect(200);
+});
+
+test('IndexNow: key file served, changes are announced', async () => {
+  const { indexNowKey } = await import('../src/lib/indexnow.js');
+  const key = await indexNowKey(store);
+  assert.equal((await request(app).get(`/${key}.txt`).set('Host', 'pcw.example.org').expect(200)).text, key);
+  await request(app).get(`/${'0'.repeat(32)}.txt`).set('Host', 'pcw.example.org').expect(404);
+  const a = request.agent(app);
+  await a.post('/api/admin/login').send({ username: 'admin', password: 'Pcw@2026' }).expect(200);
+  pings.length = 0;
+  await a.post('/api/admin/events').send({ city: 'guwahati', title: 'IndexNow Test', date: '2099-05-05', rsvp: 'none' }).expect(200);
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(pings.length, 1);
+  assert.ok(pings[0].includes('/space/guwahati') && pings[0].includes('/event/indexnow-test-2099-05-05'));
+
+  const { makeIndexNow } = await import('../src/lib/indexnow.js');
+  const calls = [];
+  const fake = async (url, opts) => (calls.push([url, JSON.parse(opts.body)]), { status: 202 });
+  assert.deepEqual(await makeIndexNow(store, { siteUrl: 'http://localhost:4000' }, fake)(['/']), { skipped: true });
+  const out = await makeIndexNow(store, { siteUrl: 'https://pcw.example.org' }, fake)(['/', '/faq', '/']);
+  assert.equal(out.status, 202);
+  assert.equal(calls[0][0], 'https://api.indexnow.org/indexnow');
+  assert.deepEqual(calls[0][1].urlList, ['https://pcw.example.org/', 'https://pcw.example.org/faq']);
+  assert.equal(calls[0][1].keyLocation, `https://pcw.example.org/${key}.txt`);
 });

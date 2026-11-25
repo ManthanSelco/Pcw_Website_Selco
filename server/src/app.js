@@ -9,6 +9,8 @@ import { eventRoutes } from './routes/events.js';
 import { adminRoutes } from './routes/admin.js';
 import { makeAuth } from './lib/auth.js';
 import { pageFor, renderHtml, sitemapXml, robotsTxt, llmsTxt, siteUrlFor, getSite } from './lib/seo.js';
+import { getFaq, cleanFaq } from './lib/faq.js';
+import { indexNowKey, makeIndexNow } from './lib/indexnow.js';
 
 export function createApp(store, config) {
   const app = express();
@@ -31,6 +33,58 @@ export function createApp(store, config) {
 
   // ---------- API ----------
   app.get('/api/health', (req, res) => res.json({ ok: true, db: store.kind }));
+  // ---------- one main address ----------
+  // When SITE_URL is set (e.g. https://platformforcollectivewisdom.org), visits on other names that
+  // reach this server (www., the sslip.io test address) are sent there, so Google sees one site.
+  const mainHost = config.siteUrl ? new URL(config.siteUrl).host : '';
+  app.use((req, res, next) => {
+    const host = (req.headers.host || '').toLowerCase();
+    if (!mainHost || !host || host === mainHost || process.env.CANONICAL_REDIRECT === 'false') return next();
+    if (/^(localhost|127\.|\[?::1|\d+\.\d+\.\d+\.\d+)/.test(host)) return next(); // direct/internal checks
+    if (req.path.startsWith('/api/') || req.path.startsWith('/.well-known/')) return next();
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    res.redirect(301, config.siteUrl + req.originalUrl);
+  });
+
+  // ---------- IndexNow: tell Bing & co. about changes right away ----------
+  const ping = config.indexNow || makeIndexNow(store, config);
+  let pending = null;
+  const queue = () => {
+    if (pending) return;
+    pending = setTimeout(async () => {
+      pending = null;
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        const evs = (await store.collection('events').find({})).filter((e) => e.published !== false && !e.sample && (e.date || '') >= today);
+        await ping(['/', '/space/bangalore', '/space/guwahati', '/recordings/podcasts', '/recordings/reports', '/recordings/videos', '/faq', ...evs.slice(0, 80).map((e) => `/event/${e.slug}`)]);
+      } catch (e) {
+        console.error('[indexnow]', e.message);
+      }
+    }, config.indexNowDelayMs ?? 30000);
+    pending.unref?.();
+  };
+  app.use('/api/admin', (req, res, next) => {
+    if (req.method !== 'GET' && /^\/(events|recordings|spaces|faq)/.test(req.path)) res.on('finish', () => res.statusCode < 300 && queue());
+    next();
+  });
+  app.get(/^\/([a-f0-9]{32})\.txt$/, async (req, res, next) => {
+    try {
+      if (req.params[0] !== (await indexNowKey(store))) return next();
+      res.type('text/plain').send(req.params[0]);
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // ---------- FAQ ----------
+  app.get('/api/faq', async (req, res, next) => {
+    try {
+      res.set('Cache-Control', 'no-cache').json({ items: await getFaq(store) });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   app.use('/api/newsletter', newsletterRoutes(store));
   app.use('/api', eventRoutes(store));
   app.use('/api/admin', (req, res, next) => {
@@ -42,6 +96,17 @@ export function createApp(store, config) {
 
   // ---------- images uploaded from the admin panel (S3 bucket or data/uploads) ----------
   if (config.storage) app.get('/uploads/:name', (req, res) => config.storage.send(req.params.name, res));
+  // uploaded reports (PDF opens in the browser, Word/PowerPoint download with their original name)
+  if (config.storage?.sendDoc)
+    app.get('/files/:name', async (req, res, next) => {
+      try {
+        const rec = (await store.collection('recordings').find({})).find((x) => x.link === `/files/${req.params.name}` && x.published !== false);
+        if (!rec) return res.status(404).end();
+        await config.storage.sendDoc(req.params.name, res, rec.fileName || `${rec.title}.${req.params.name.split('.').pop()}`);
+      } catch (e) {
+        next(e);
+      }
+    });
 
   // ---------- Webflow CDN images (cached locally) ----------
   const cdn = makeCdnCache(config.cdnCache);

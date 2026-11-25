@@ -8,10 +8,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CITIES, todayIST } from './cities.js';
-import { youtubeId } from './events.js';
+import { youtubeId, mediaFor } from './media.js';
 import { TYPES, TYPE_LABELS, publicRecording, eventAsVideo, sortRecordings } from './recordings.js';
 import { getSpace } from './spaces.js';
 import { getSite } from './site.js';
+import { getFaq } from './faq.js';
 
 export const SITE_NAME = 'Platform for Collective Wisdom';
 const SHORT = 'PCW';
@@ -31,14 +32,28 @@ const ADDRESS = {
   addressCountry: 'IN',
 };
 const MAPS = 'https://maps.app.goo.gl/x8KkGeiJr2B6JG569';
+const MAPS_GHY = 'https://www.google.com/maps/place/SELCO+Foundation+-+NE+Regional+Office/@26.1458642,91.685078,17z';
+const PHONES_GHY = ['+91 97067 78232', '+91 70023 91228'];
+const GHY_TEXT = 'SELCO Foundation – NE Regional Office, PNGB Rd, Nambari Railway Officers Colony, Gotanagar, Maligaon, Guwahati, Assam 781011';
 const CITY_INFO = {
   bangalore: { locality: 'Bengaluru', region: 'Karnataka', address: ADDRESS },
-  guwahati: { locality: 'Guwahati', region: 'Assam', address: { '@type': 'PostalAddress', addressLocality: 'Guwahati', addressRegion: 'Assam', addressCountry: 'IN' } },
+  guwahati: {
+    locality: 'Guwahati',
+    region: 'Assam',
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress: 'SELCO Foundation - NE Regional Office, PNGB Rd, Nambari Railway Officers Colony, Gotanagar, Maligaon',
+      addressLocality: 'Guwahati',
+      addressRegion: 'Assam',
+      postalCode: '781011',
+      addressCountry: 'IN',
+    },
+  },
 };
 const POLICY = {
   'contact-us': {
     title: 'Contact Us',
-    description: `Contact the Platform for Collective Wisdom (PCW): email ${EMAIL}, phone ${PHONE}, or visit the PCW space in J. P. Nagar, Bengaluru.`,
+    description: `Contact the Platform for Collective Wisdom (PCW): email ${EMAIL}. Bangalore: ${PHONE}, J. P. Nagar. Guwahati: ${PHONES_GHY.join(', ')}, Maligaon.`,
   },
   'privacy-policy': { title: 'Privacy Policy', description: 'How the Platform for Collective Wisdom (PCW) by SELCO Foundation collects, uses and protects personal data.' },
   'terms-of-use': { title: 'Terms of Use', description: 'Terms of Use and Community Guidelines for the Platform for Collective Wisdom (PCW) by SELCO Foundation.' },
@@ -84,8 +99,9 @@ const fmtTime = (t) => {
 const isoAt = (date, time) => (date ? (time ? `${date}T${time}:00+05:30` : date) : undefined);
 
 // ---------- schema.org ----------
-function orgLd(base) {
+function orgLd(base, sameAs = []) {
   return {
+    sameAs: sameAs.length ? sameAs : undefined,
     '@type': 'Organization',
     '@id': `${base}/#organization`,
     name: SITE_NAME,
@@ -97,7 +113,14 @@ function orgLd(base) {
     telephone: PHONE,
     address: ADDRESS,
     parentOrganization: { '@type': 'Organization', name: 'SELCO Foundation' },
-    contactPoint: { '@type': 'ContactPoint', contactType: 'general enquiries', email: EMAIL, telephone: PHONE, areaServed: 'IN', availableLanguage: ['en'] },
+    contactPoint: [
+      { '@type': 'ContactPoint', contactType: 'general enquiries', email: EMAIL, telephone: PHONE, areaServed: 'IN', availableLanguage: ['en'], name: 'Bangalore' },
+      ...PHONES_GHY.map((t) => ({ '@type': 'ContactPoint', contactType: 'general enquiries', email: EMAIL, telephone: t, areaServed: 'IN', availableLanguage: ['en'], name: 'Guwahati' })),
+    ],
+    location: [
+      { '@type': 'Place', name: 'PCW Space, Bengaluru', address: ADDRESS, hasMap: MAPS },
+      { '@type': 'Place', name: 'PCW Guwahati (SELCO Foundation – NE Regional Office)', address: CITY_INFO.guwahati.address, hasMap: MAPS_GHY },
+    ],
   };
 }
 function websiteLd(base) {
@@ -133,7 +156,8 @@ function eventLd(base, e, today) {
   };
   const people = (e.speakers || []).filter((s) => s.name && !s.name.startsWith('['));
   if (people.length) ld.performer = people.map((s) => ({ '@type': 'Person', name: s.name, jobTitle: s.role || undefined }));
-  if (yt) ld.recordedIn = videoLd({ title: `${e.title} (recording)`, description: e.tagline, date: e.date, media: { kind: 'youtube', youtubeId: yt }, link: `https://www.youtube.com/watch?v=${yt}` });
+  const vlink = e.youtubeUrl || e.recordingUrl;
+  if (vlink) ld.recordedIn = videoLd({ title: `${e.title} (recording)`, description: e.tagline, date: e.date, media: mediaFor(vlink), link: yt ? `https://www.youtube.com/watch?v=${yt}` : vlink });
   if (e.date && e.date < today) delete ld.eventStatus; // past event: no status claim needed
   return ld;
 }
@@ -145,7 +169,7 @@ function videoLd(x) {
     description: clip(x.description || x.speakers || x.title, 300),
     uploadDate: x.date || undefined,
     thumbnailUrl: yt ? `https://i.ytimg.com/vi/${yt}/hqdefault.jpg` : undefined,
-    embedUrl: yt ? `https://www.youtube-nocookie.com/embed/${yt}` : undefined,
+    embedUrl: yt ? `https://www.youtube-nocookie.com/embed/${yt}` : x.media?.embed || undefined,
     contentUrl: yt ? undefined : x.link || undefined,
     url: x.link || undefined,
   };
@@ -170,7 +194,8 @@ function recordingLd(base, x) {
     author: x.speakers ? { '@type': 'Organization', name: x.speakers } : { '@id': `${base}/#organization` },
     datePublished: x.date || undefined,
     description: clip(x.description || x.title, 300),
-    url: x.link || `${base}/recordings/reports`,
+    url: x.link ? abs(base, x.link) : `${base}/recordings/reports`,
+    encodingFormat: x.link?.endsWith('.pdf') ? 'application/pdf' : undefined,
     image: x.image ? abs(base, x.image) : undefined,
   };
 }
@@ -184,7 +209,7 @@ function navHtml() {
   return `<nav aria-label="Main"><ul>${li('/', 'Home')}${li('/#about-us', 'About Us')}${li('/recordings', 'Recordings')}${li('/space/bangalore', 'Bangalore')}${li('/space/guwahati', 'Guwahati')}${li('/contact-us', 'Contact us')}</ul></nav>`;
 }
 function footerHtml() {
-  return `<footer><p>${esc(SITE_NAME)} (${SHORT}), an initiative by SELCO Foundation. Email: <a href="mailto:${EMAIL}">${EMAIL}</a> · Phone: ${esc(PHONE)}</p><ul>${li('/contact-us', 'Contact us')}${li('/privacy-policy', 'Privacy Policy')}${li('/terms-of-use', 'Terms of Use')}</ul></footer>`;
+  return `<footer><p>${esc(SITE_NAME)} (${SHORT}), an initiative by SELCO Foundation. Email: <a href="mailto:${EMAIL}">${EMAIL}</a> · Phone: ${esc(PHONE)}</p><ul>${li('/contact-us', 'Contact us')}${li('/faq', 'FAQ')}${li('/privacy-policy', 'Privacy Policy')}${li('/terms-of-use', 'Terms of Use')}</ul></footer>`;
 }
 
 // ---------- data ----------
@@ -196,7 +221,7 @@ async function loadRecordings(store, events) {
   const out = {};
   for (const t of TYPES) {
     let items = sortRecordings(all.filter((x) => x.type === t)).map(publicRecording);
-    if (t === 'video') items = sortRecordings([...items, ...events.filter((e) => youtubeId(e.youtubeUrl || e.recordingUrl)).map(eventAsVideo)]);
+    if (t === 'video') items = sortRecordings([...items, ...events.filter((e) => e.youtubeUrl || e.recordingUrl).map(eventAsVideo)]);
     out[t] = items;
   }
   return out;
@@ -206,11 +231,15 @@ async function loadRecordings(store, events) {
 export async function pageFor(store, rawPath, base) {
   const path = rawPath.replace(/\/+$/, '') || '/';
   const today = todayIST();
-  const ld = [orgLd(base), websiteLd(base)];
+  const site = await getSite(store);
+  const ld = [orgLd(base, site.sameAs), websiteLd(base)];
   const page = { status: 200, type: 'website', image: abs(base, DEFAULT_IMAGE), noindex: false, ld };
 
   if (path === '/') {
-    const events = (await loadEvents(store)).filter((e) => !e.sample && e.date >= today).slice(0, 6);
+    const all = (await loadEvents(store)).filter((e) => !e.sample);
+    const events = all.filter((e) => e.date >= today).slice(0, 6);
+    const recent = all.filter((e) => e.date < today).reverse().slice(0, 6);
+    const faq = (await getFaq(store)).slice(0, 5);
     Object.assign(page, {
       title: `${SHORT} | ${SITE_NAME} by SELCO Foundation`,
       description: clip(`${SITE_NAME}: ${TAGLINE} Knowledge from communities, practitioners and institutions, plus event spaces in Bangalore and Guwahati.`),
@@ -219,8 +248,24 @@ export async function pageFor(store, rawPath, base) {
 <h2>Be part of the Collective</h2><p>PCW brings together three knowledge perspectives that are often held separately: voices from the ground (first-hand accounts from farmers, SHG members, health workers and rural entrepreneurs), practitioner perspectives (program teams and field staff), and institutional knowledge.</p>
 <h2>A space to connect in person</h2><p>Beyond the digital platform, PCW runs physical spaces in <a href="/space/bangalore">Bangalore</a> and <a href="/space/guwahati">Guwahati</a> to meet and co-create, attend events and host events.</p>
 ${events.length ? `<h2>Upcoming events</h2><ul>${events.map((e) => li(`/event/${e.slug}`, e.title, eventLine(e))).join('')}</ul>` : ''}
-<h2>Recordings</h2><ul>${li('/recordings/podcasts', 'Podcasts')}${li('/recordings/reports', 'Reports')}${li('/recordings/videos', 'Videos')}</ul>`,
+${recent.length ? `<h2>Recent events</h2><ul>${recent.map((e) => li(`/event/${e.slug}`, e.title, eventLine(e))).join('')}</ul>` : ''}
+<h2>Recordings</h2><ul>${li('/recordings/podcasts', 'Podcasts')}${li('/recordings/reports', 'Reports')}${li('/recordings/videos', 'Videos')}</ul>
+${faq.length ? `<h2>Frequently asked questions</h2>${faq.map((x) => `<h3>${esc(x.q)}</h3><p>${esc(x.a)}</p>`).join('')}<p><a href="/faq">All questions</a></p>` : ''}`,
     });
+    return page;
+  }
+
+  if (path === '/faq') {
+    const items = await getFaq(store);
+    Object.assign(page, {
+      title: `FAQ: Platform for Collective Wisdom (PCW)`,
+      description: clip(`Answers about the ${SITE_NAME} (PCW) by SELCO Foundation: what it is, the spaces in Bangalore and Guwahati, events, booking the space, recordings and contact.`),
+      canonical: `${base}/faq`,
+      body: `<h1>Frequently asked questions</h1>${items.map((x) => `<h2>${esc(x.q)}</h2><p>${esc(x.a)}</p>`).join('')}`,
+    });
+    ld.push(crumbs(base, [{ name: 'FAQ', path: '/faq' }]));
+    if (items.length)
+      ld.push({ '@type': 'FAQPage', mainEntity: items.map((x) => ({ '@type': 'Question', name: x.q, acceptedAnswer: { '@type': 'Answer', text: x.a } })) });
     return page;
   }
 
@@ -243,7 +288,7 @@ ${events.length ? `<h2>Upcoming events</h2><ul>${events.map((e) => li(`/event/${
 ${past.length ? `<h2>Past events in ${esc(name)}</h2><ul>${past.slice(0, 30).map((e) => li(`/event/${e.slug}`, e.title, eventLine(e))).join('')}</ul>` : ''}
 <h2>${esc(space.title)}</h2><p>${esc(space.intro)}</p><ul>${space.cards.map((x) => `<li><strong>${esc(x.title)}</strong>: ${esc(x.text)}</li>`).join('')}</ul>
 <h2>Book the space</h2><p>Host a workshop, a meeting or a community event at the PCW space in ${esc(name)} using the booking form on this page.</p>
-${cityKey === 'bangalore' ? `<h2>Address</h2><address>1st Floor, 729 J.P. Towers, 8th Main Road, 11th Cross Rd, 3rd Phase, J. P. Nagar, Bengaluru, Karnataka 560078. <a href="${MAPS}">Google Maps</a></address>` : ''}`,
+${cityKey === 'bangalore' ? `<h2>Address</h2><address>1st Floor, 729 J.P. Towers, 8th Main Road, 11th Cross Rd, 3rd Phase, J. P. Nagar, Bengaluru, Karnataka 560078. Phone ${esc(PHONE)}. <a href="${MAPS}">Google Maps</a></address>` : `<h2>Address</h2><address>${esc(GHY_TEXT)}. Phone ${PHONES_GHY.map(esc).join(', ')}. <a href="${MAPS_GHY}">Google Maps</a></address>`}`,
     });
     ld.push(crumbs(base, [{ name, path: `/space/${cityKey}` }]));
     ld.push({ '@type': 'Place', '@id': `${base}/space/${cityKey}#place`, name: `PCW Space, ${c.locality}`, address: c.address, url: `${base}/space/${cityKey}` });
@@ -275,7 +320,7 @@ ${cityKey === 'bangalore' ? `<h2>Address</h2><address>1st Floor, 729 J.P. Towers
 <dl><dt>Date</dt><dd>${esc(when || 'To be announced')}</dd><dt>Venue</dt><dd>${esc([e.venue, cityName].filter(Boolean).join(', '))}</dd>${e.category ? `<dt>Category</dt><dd>${esc(e.category)}</dd>` : ''}</dl>
 ${e.description ? `<h2>About this event</h2>${String(e.description).split(/\n{2,}/).map((p) => `<p>${esc(p)}</p>`).join('')}` : ''}
 ${people.length ? `<h2>Speakers</h2><ul>${people.map((s) => `<li>${esc(s.name)}${s.role ? ', ' + esc(s.role) : ''}</li>`).join('')}</ul>` : ''}
-${yt ? `<h2>Watch the recording</h2><p><a href="https://www.youtube.com/watch?v=${yt}">Watch on YouTube</a></p>` : ''}
+${e.youtubeUrl || e.recordingUrl ? `<h2>Watch the recording</h2><p><a href="${esc(yt ? `https://www.youtube.com/watch?v=${yt}` : e.youtubeUrl || e.recordingUrl)}">Watch the recording</a></p>` : ''}
 <p><a href="/space/${esc(e.city)}">More events at PCW ${esc(cityName)}</a></p></article>`,
     });
     ld.push(crumbs(base, [{ name: cityName, path: `/space/${e.city}` }, { name: e.title, path: `/event/${e.slug}` }]));
@@ -317,7 +362,7 @@ ${items.length ? `<ul>${items.map((x) => `<li>${x.link ? `<a href="${esc(x.link)
       canonical: `${base}/${pol}`,
       body:
         pol === 'contact-us'
-          ? `<h1>Contact Us</h1><p>Whether you’d like to learn more about the Platform for Collective Wisdom, explore collaboration, or share feedback, we’d be glad to hear from you.</p><h2>Email</h2><p><a href="mailto:${EMAIL}">${EMAIL}</a></p><h2>Phone</h2><p><a href="tel:+918904846800">${esc(PHONE)}</a></p><h2>Visit Us</h2><address>Platform for Collective Wisdom, 1st Floor, 729 J.P. Towers, 8th Main Road, 11th Cross Rd, 3rd Phase, J. P. Nagar, Bengaluru, Karnataka 560078. <a href="${MAPS}">Google Maps</a></address>`
+          ? `<h1>Contact Us</h1><p>Whether you’d like to learn more about the Platform for Collective Wisdom, explore collaboration, or share feedback, we’d be glad to hear from you.</p><h2>Email</h2><p><a href="mailto:${EMAIL}">${EMAIL}</a></p><h2>Phone</h2><p>Bangalore: <a href="tel:+918904846800">${esc(PHONE)}</a>. Guwahati: <a href="tel:+919706778232">${PHONES_GHY[0]}</a>, <a href="tel:+917002391228">${PHONES_GHY[1]}</a>.</p><h2>Visit Us</h2><h3>Bangalore</h3><address>Platform for Collective Wisdom, 1st Floor, 729 J.P. Towers, 8th Main Road, 11th Cross Rd, 3rd Phase, J. P. Nagar, Bengaluru, Karnataka 560078. <a href="${MAPS}">Google Maps</a></address><h3>Guwahati</h3><address>${esc(GHY_TEXT)}. <a href="${MAPS_GHY}">Google Maps</a></address>`
           : `<h1>${esc(p.title)}</h1>${policyHtml(pol) || `<p>${esc(p.description)}</p>`}`,
     });
     ld.push(crumbs(base, [{ name: p.title, path: `/${pol}` }]));
@@ -392,6 +437,7 @@ export async function sitemapXml(store, base) {
     ['/recordings/podcasts', 'weekly', '0.8'],
     ['/recordings/reports', 'weekly', '0.8'],
     ['/recordings/videos', 'weekly', '0.8'],
+    ['/faq', 'monthly', '0.7'],
     ['/contact-us', 'monthly', '0.6'],
     ['/privacy-policy', 'yearly', '0.2'],
     ['/terms-of-use', 'yearly', '0.2'],
@@ -431,8 +477,10 @@ export async function llmsTxt(store, base) {
   const upcoming = events.filter((e) => e.date >= today);
   const past = events.filter((e) => e.date < today).reverse().slice(0, 20);
   const rec = await loadRecordings(store, events);
+  const faq = await getFaq(store);
+  const site = await getSite(store);
   const line = (e) => `- [${e.title}](${base}/event/${e.slug}): ${[eventLine(e), e.tagline].filter(Boolean).join('. ')}`;
-  const recLine = (x) => `- ${x.link ? `[${x.title}](${x.link})` : x.title}${x.speakers ? `: ${x.speakers}` : ''}${x.date ? ` (${fmtDate(x.date)})` : ''}`;
+  const recLine = (x) => `- ${x.link ? `[${x.title}](${abs(base, x.link)})` : x.title}${x.speakers ? `: ${x.speakers}` : ''}${x.date ? ` (${fmtDate(x.date)})` : ''}`;
   return `# ${SITE_NAME} (${SHORT})
 
 > ${ABOUT}
@@ -443,14 +491,17 @@ ${TAGLINE}
 - Organisation: ${SITE_NAME} (${SHORT}), an initiative by SELCO Foundation, India.
 - Spaces: Bangalore (Bengaluru, Karnataka) and Guwahati (Assam), used for talks, workshops, screenings, meetings and community events.
 - Bangalore address: 1st Floor, 729 J.P. Towers, 8th Main Road, 11th Cross Rd, 3rd Phase, J. P. Nagar, Bengaluru, Karnataka 560078 (${MAPS}).
-- Contact: ${EMAIL}, ${PHONE}.
+- Guwahati address: ${GHY_TEXT} (${MAPS_GHY}).
+- Contact: ${EMAIL} (both cities). Phone Bangalore: ${PHONE}. Phone Guwahati: ${PHONES_GHY.join(', ')}.
 - Booking the space: use the "Book the space" form on the Bangalore or Guwahati page.
 
+${site.sameAs.length ? `- Official profiles: ${site.sameAs.join(', ')}\n` : ''}
 ## Main pages
 - [Home](${base}/): what PCW is, the Collective, partners and the physical space.
 - [PCW Bangalore](${base}/space/bangalore): upcoming and past events, calendar, the space, booking.
 - [PCW Guwahati](${base}/space/guwahati): upcoming and past events, calendar, the space, booking.
 - [Podcasts](${base}/recordings/podcasts), [Reports](${base}/recordings/reports), [Videos](${base}/recordings/videos): recordings and publications.
+- [FAQ](${base}/faq): common questions and answers.
 - [Contact us](${base}/contact-us)
 
 ## Upcoming events
@@ -462,7 +513,7 @@ ${TYPES.map((t) => {
 })
   .filter(Boolean)
   .join('\n')}
-## Optional
+${faq.length ? `## Frequently asked questions\n${faq.map((x) => `### ${x.q}\n${x.a}`).join('\n\n')}\n\n` : ''}## Optional
 - [Privacy Policy](${base}/privacy-policy)
 - [Terms of Use](${base}/terms-of-use)
 - [Sitemap](${base}/sitemap.xml)

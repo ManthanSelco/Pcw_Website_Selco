@@ -4,7 +4,7 @@ export const DEFAULT_BOOKING_URL =
 
 export async function getSite(store) {
   const s = (await store.collection('settings').findOne({ _id: 'site' })) || {};
-  return { bookingUrl: s.bookingUrl || DEFAULT_BOOKING_URL, googleVerification: s.googleVerification || '', bingVerification: s.bingVerification || '' };
+  return { bookingUrl: s.bookingUrl || DEFAULT_BOOKING_URL, googleVerification: s.googleVerification || '', bingVerification: s.bingVerification || '', sameAs: Array.isArray(s.sameAs) ? s.sameAs : [] };
 }
 
 export function cleanSite(body) {
@@ -20,5 +20,9 @@ export function cleanSite(body) {
   const bingVerification = code(body?.bingVerification);
   for (const [k, v] of Object.entries({ googleVerification, bingVerification }))
     if (v && !/^[A-Za-z0-9_\-=.]+$/.test(v)) errors[k] = 'Paste only the verification code';
-  return { data: { bookingUrl, googleVerification, bingVerification }, errors };
+  // official profiles (LinkedIn, YouTube, Instagram...): helps Google / AI tie them to PCW
+  const raw = Array.isArray(body?.sameAs) ? body.sameAs : String(body?.sameAs ?? '').split(/[\s,]+/);
+  const sameAs = [...new Set(raw.map((x) => String(x).trim()).filter(Boolean))].slice(0, 12);
+  if (sameAs.some((u) => !/^https:\/\/[^\s<>"]+\.[^\s<>"]+$/i.test(u))) errors.sameAs = 'Each profile link must start with https://';
+  return { data: { bookingUrl, googleVerification, bingVerification, sameAs }, errors };
 }

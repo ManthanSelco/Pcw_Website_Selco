@@ -8,6 +8,7 @@ import Bookings from './Bookings.jsx';
 import Settings from './Settings.jsx';
 import Spaces from './Spaces.jsx';
 import Recordings from './Recordings.jsx';
+import Faq from './Faq.jsx';
 import './admin.css';
 
 // ---- tiny router for /admin/... ----
@@ -116,6 +117,7 @@ const MENU = [
   ['/admin/spaces', 'City spaces'],
   ['/admin/rsvps', 'RSVPs'],
   ['/admin/newsletter', 'Newsletter'],
+  ['/admin/faq', 'FAQ'],
   ['/admin/settings', 'Settings'],
 ];
 
@@ -164,6 +166,7 @@ export default function AdminApp() {
     pathname === '/admin/rsvps' ? <Rsvps /> :
     pathname === '/admin/newsletter' ? <Newsletter /> :
     pathname === '/admin/bookings' ? <Bookings /> :
+    pathname === '/admin/faq' ? <Faq /> :
     pathname === '/admin/settings' ? <Settings /> :
     <Dashboard />;
 

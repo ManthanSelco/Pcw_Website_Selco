@@ -168,14 +168,11 @@ export default function CityPage({ cityKey }) {
       <section className="pcw-wrap pcw-block" id="book">
         <h2 className="pcw-h2">Book the space</h2>
         <div className="pcw-book">
-          <div>
-            <span className="pcw-tag-pink">BOOKING FORM</span>
-            <p>
-              Host a workshop, a meeting or a community event at the PCW space in {city.name}. Fill in the booking form and the PCW team will get back to you.
-            </p>
-          </div>
+          <p>
+            Host a workshop, a meeting or a community event at the PCW space in {city.name}. Fill in the booking form and the PCW team will get back to you.
+          </p>
           <a className="pcw-pill pcw-pill-green" href={bookingUrl} target="_blank" rel="noopener noreferrer">
-            Book the space <span aria-hidden="true">↗</span>
+            Booking form <span aria-hidden="true">↗</span>
           </a>
         </div>
       </section>

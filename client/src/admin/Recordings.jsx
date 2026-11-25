@@ -39,6 +39,96 @@ function linkKind(url) {
   return 'Web page: opens in a new tab';
 }
 
+const isUploaded = (link) => /^\/files\/[a-f0-9-]{36}\.(pdf|docx?|pptx?)$/i.test(link || '');
+const mb = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n ? `${Math.max(1, Math.round(n / 1024))} KB` : '');
+const MAX_MB = 50;
+
+// Upload a report file (PDF, Word, PowerPoint, max 50 MB). Bigger files: share a link instead.
+function DocUpload({ value, onChange }) {
+  const input = useRef(null);
+  const [pct, setPct] = useState(null);
+  const [err, setErr] = useState('');
+  function pick(file) {
+    setErr('');
+    if (!file) return;
+    if (!/\.(pdf|docx?|pptx?)$/i.test(file.name)) return setErr('Please choose a PDF, Word (.doc/.docx) or PowerPoint (.ppt/.pptx) file.');
+    if (file.size > MAX_MB * 1024 * 1024)
+      return setErr(`This file is ${mb(file.size)}, more than ${MAX_MB} MB. Use a Google Drive (or other) share link instead, as explained below.`);
+    const fd = new FormData();
+    fd.append('file', file);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/admin/upload-doc');
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (e) => e.lengthComputable && setPct(Math.round((e.loaded / e.total) * 100));
+    xhr.onload = () => {
+      setPct(null);
+      let body = {};
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        /* not JSON (e.g. the server's upload limit) */
+      }
+      if (xhr.status === 200 && body.url) onChange({ url: body.url, name: body.name, size: body.size });
+      else setErr(body.error || (xhr.status === 413 ? `The file is too large for the server. Use a share link instead.` : 'Upload failed. Please try again.'));
+    };
+    xhr.onerror = () => {
+      setPct(null);
+      setErr('Upload failed. Check the internet connection and try again.');
+    };
+    setPct(0);
+    xhr.send(fd);
+  }
+  return (
+    <div className="adm-field is-wide adm-doc">
+      <span className="adm-label">Upload report</span>
+      {value ? (
+        <div className="adm-doc-file">
+          <span className="adm-doc-icon" aria-hidden="true">
+            {value.url.split('.').pop().toUpperCase()}
+          </span>
+          <span className="adm-doc-name">
+            <b>{value.name || 'Uploaded file'}</b>
+            <small>{mb(value.size)}</small>
+          </span>
+          <a className="adm-btn adm-btn-ghost" href={value.url} target="_blank" rel="noreferrer">
+            Open
+          </a>
+          <button type="button" className="adm-btn" onClick={() => onChange(null)}>
+            Remove
+          </button>
+        </div>
+      ) : (
+        <div className="adm-doc-drop">
+          <button type="button" className="adm-btn" disabled={pct !== null} onClick={() => input.current?.click()}>
+            {pct !== null ? `Uploading… ${pct}%` : 'Choose file'}
+          </button>
+          <span className="adm-hint">PDF, Word or PowerPoint · up to {MAX_MB} MB</span>
+          {pct !== null && (
+            <span className="adm-doc-bar" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+              <i style={{ width: `${pct}%` }} />
+            </span>
+          )}
+        </div>
+      )}
+      <input
+        ref={input}
+        type="file"
+        hidden
+        accept=".pdf,.doc,.docx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        onChange={(e) => {
+          pick(e.target.files?.[0]);
+          e.target.value = '';
+        }}
+      />
+      {err && <span className="adm-field-error">{err}</span>}
+      <div className="adm-note adm-doc-note">
+        <b>File bigger than {MAX_MB} MB?</b> Upload it to Google Drive (or OneDrive, Dropbox or another sharing site), set sharing to{' '}
+        <b>“Anyone with the link can view”</b>, copy the link and paste it in <b>Report link</b> below.
+      </div>
+    </div>
+  );
+}
+
 const blank = (type = 'podcast') => ({
   type,
   title: '',
@@ -51,6 +141,8 @@ const blank = (type = 'podcast') => ({
   image: '',
   description: '',
   published: true,
+  fileName: '',
+  fileSize: 0,
 });
 
 function Editor({ initial, meta, onSaved, onCancel }) {
@@ -59,9 +151,12 @@ function Editor({ initial, meta, onSaved, onCancel }) {
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
   const uploads = useRef([]); // photos uploaded in this form; unused ones are deleted from S3
-  const discardUnused = (keep) => {
+  const docUploads = useRef([]); // reports uploaded in this form; unused ones are deleted
+  const discardUnused = (keep, keepDoc) => {
     for (const url of uploads.current) if (url !== keep && url !== initial.image) call('/api/admin/upload/discard', { url }).catch(() => {});
     uploads.current = [];
+    for (const url of docUploads.current) if (url !== keepDoc && url !== initial.link) call('/api/admin/upload-doc/discard', { url }).catch(() => {});
+    docUploads.current = [];
   };
   const set = (k, v) => {
     setF((s) => ({ ...s, [k]: v }));
@@ -75,7 +170,7 @@ function Editor({ initial, meta, onSaved, onCancel }) {
     setBusy(true);
     try {
       const saved = f._id ? await call(`/api/admin/recordings/${f._id}`, f, 'PUT') : await call('/api/admin/recordings', f);
-      discardUnused(saved.image);
+      discardUnused(saved.image, saved.link);
       notify(f._id ? `${label} updated` : `${label} added`);
       onSaved(saved);
     } catch (x) {
@@ -146,20 +241,35 @@ function Editor({ initial, meta, onSaved, onCancel }) {
             ))}
           </select>
         </Field>
+        {f.type === 'report' && (
+          <DocUpload
+            value={isUploaded(f.link) ? { url: f.link, name: f.fileName, size: f.fileSize } : null}
+            onChange={(d) => {
+              if (d) docUploads.current.push(d.url);
+              setF((x) => ({ ...x, link: d ? d.url : '', fileName: d ? d.name : '', fileSize: d ? d.size : 0 }));
+              setErrors((e) => ({ ...e, link: undefined }));
+            }}
+          />
+        )}
         <Field
-          label={f.type === 'report' ? 'Report link' : f.type === 'video' ? 'Video link' : 'Podcast link'}
+          label={f.type === 'report' ? (isUploaded(f.link) ? 'Report link (using the uploaded file)' : 'Report link') : f.type === 'video' ? 'Video link' : 'Podcast link'}
           error={errors.link}
           wide
           hint={
             linkKind(f.link) ||
             (f.type === 'report'
-              ? 'Google Drive, PDF or any web page link'
+              ? 'Or paste a link: Google Drive, OneDrive, Dropbox, a PDF or any web page'
               : f.type === 'video'
-                ? 'YouTube link (or Google Drive / .mp4 link)'
+                ? 'Any video link: YouTube, Vimeo, Google Drive, .mp4 or any other site'
                 : 'YouTube, Spotify, SoundCloud, Apple Podcasts, Google Drive or .mp3 link')
           }
         >
-          <input value={f.link} onChange={(e) => set('link', e.target.value.trim())} placeholder="https://…" inputMode="url" />
+          <input
+            value={isUploaded(f.link) ? '' : f.link}
+            onChange={(e) => setF((x) => ({ ...x, link: e.target.value.trim(), fileName: '', fileSize: 0 }))}
+            placeholder={isUploaded(f.link) ? 'Uploaded file is used (paste a link here to use a link instead)' : 'https://…'}
+            inputMode="url"
+          />
         </Field>
         {yid && !f.image && (
           <div className="adm-field is-wide adm-yt-preview">
@@ -188,7 +298,7 @@ function Editor({ initial, meta, onSaved, onCancel }) {
           type="button"
           className="adm-btn adm-btn-ghost"
           onClick={() => {
-            discardUnused(initial.image);
+            discardUnused(initial.image, initial.link);
             onCancel();
           }}
         >

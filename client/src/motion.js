@@ -28,6 +28,7 @@ const UP = [
   '.pcw-yt-wrap',
   '.pcw-space .left_right_content > *',
   '.pcw-space .vertical_cards',
+  '.pcw-prog-group',
   '.pcw-policy .full-content > *',
 ].join(',');
 const SKIP = '.pcw-modal-backdrop, .navbar, .footer, nav.navbar, [data-no-motion]';

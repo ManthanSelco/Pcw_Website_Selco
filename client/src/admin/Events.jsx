@@ -30,6 +30,24 @@ const blank = (city = 'bangalore') => ({
   published: true,
 });
 
+// what the website will do with a video link (same rules as the server)
+function videoHint(url) {
+  const s = String(url || '').trim();
+  if (!s) return '';
+  if (ytId(s)) return 'YouTube: plays on the event page';
+  let u;
+  try {
+    u = new URL(s);
+  } catch {
+    return 'Not a full link yet (it must start with https://)';
+  }
+  const host = u.hostname.replace(/^www\./, '');
+  if (host === 'vimeo.com' || host === 'player.vimeo.com') return 'Vimeo: plays on the event page';
+  if (host === 'drive.google.com') return 'Google Drive: plays on the event page (share it as "Anyone with the link")';
+  if (/\.(mp4|webm|mov)$/i.test(u.pathname)) return 'Video file: plays on the event page';
+  return 'Opens in a new tab from the event page ("Watch the recording" button)';
+}
+
 export function Field({ label, error, hint, children, wide }) {
   return (
     <div className={`adm-field ${wide ? 'is-wide' : ''} ${error ? 'has-error' : ''}`}>
@@ -187,8 +205,13 @@ function Editor({ initial, meta, onSaved, onCancel }) {
           {errors.image && <span className="adm-field-error">{errors.image}</span>}
         </div>
 
-        <Field label="YouTube video link" error={errors.youtubeUrl} wide hint="Paste any YouTube link. The video plays on the event page and the Recordings page.">
-          <input value={f.youtubeUrl} onChange={(e) => set('youtubeUrl', e.target.value)} placeholder="https://www.youtube.com/watch?v=…" />
+        <Field
+          label="Video / recording link"
+          error={errors.youtubeUrl}
+          wide
+          hint={videoHint(f.youtubeUrl) || 'Any video link: YouTube, Vimeo, Google Drive, an .mp4 file, Facebook or any other site. It shows on the event page and under Recordings > Videos.'}
+        >
+          <input value={f.youtubeUrl} onChange={(e) => set('youtubeUrl', e.target.value.trim())} placeholder="https://…" inputMode="url" />
         </Field>
         {yid && (
           <div className="adm-field is-wide adm-yt-preview">
@@ -407,7 +430,7 @@ export default function Events() {
                   <span className="adm-badges">
                     {e.sample && <span className="adm-pill adm-pill-warn">Sample</span>}
                     {e.published === false && <span className="adm-pill">Hidden</span>}
-                    {e.youtubeId && <span className="adm-pill adm-pill-ok">Video</span>}
+                    {e.hasVideo && <span className="adm-pill adm-pill-ok">Video</span>}
                     {e.when === 'upcoming' && e.rsvp !== 'none' && (
                       <span className="adm-pill">
                         {e.rsvp === 'closed' ? 'RSVP closed' : e.rsvp === 'link' ? 'Register: form link' : `RSVP open${e.capacity ? ` · ${e.capacity} seats` : ''}`}

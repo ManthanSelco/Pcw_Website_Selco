@@ -91,3 +91,18 @@ test('S3: upload saves to bucket, served via /uploads, replaced + deleted images
   assert.deepEqual(await listKeys(), []);
   await request(app).get('/uploads/not-an-image.txt').expect(404);
 });
+
+test('S3: uploaded reports go to project/documents/pcw, are served and removed', { skip: !EP && 'set S3_TEST_ENDPOINT' }, async () => {
+  const pdf = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(500, 0x20)]);
+  const up = (await agent.post('/api/admin/upload-doc').attach('file', pdf, 'Field Report.pdf').expect(200)).body;
+  const name = up.url.split('/').pop();
+  assert.ok((await listKeys()).includes(`project/documents/pcw/${name}`));
+  assert.equal(fs.existsSync(path.join(tmp, 'uploads', 'files', name)), false); // nothing on local disk
+  const rec = (await agent.post('/api/admin/recordings').send({ type: 'report', title: 'Field Report', link: up.url, fileName: up.name, fileSize: up.size }).expect(200)).body;
+  const got = await request(app).get(up.url).expect(200);
+  assert.equal(got.headers['content-type'], 'application/pdf');
+  assert.equal(Buffer.from(got.body).subarray(0, 5).toString(), '%PDF-');
+  await agent.delete(`/api/admin/recordings/${rec._id}`).expect(200);
+  await new Promise((r) => setTimeout(r, 200));
+  assert.ok(!(await listKeys()).includes(`project/documents/pcw/${name}`));
+});
