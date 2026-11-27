@@ -1,0 +1,319 @@
+/* Month calendar, BIC style: dark weekday header, one row per week, event titles in the
+   days, a small card with the details on hover. Phones get the programme list only. */
+.pcw-mcal-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.pcw-mcal-bar h3 {
+  margin: 0;
+  min-width: 230px;
+  text-align: center;
+  font-size: 30px;
+  font-weight: 600;
+  color: var(--pcw-cream);
+}
+.pcw-mcal-arrow {
+  width: 48px;
+  height: 48px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--pcw-cream);
+  background: transparent;
+  color: var(--pcw-cream);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pcw-mcal-arrow:hover,
+.pcw-mcal-arrow:focus-visible {
+  background: var(--pcw-cream);
+  color: var(--pcw-green);
+}
+.pcw-mcal-today {
+  margin-left: auto;
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 999px;
+  border: 2px solid var(--pcw-pink);
+  background: transparent;
+  color: var(--pcw-pink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pcw-mcal-today:hover,
+.pcw-mcal-today:focus-visible {
+  background: var(--pcw-pink);
+  color: var(--pcw-green);
+}
+
+.pcw-mcal {
+  --mcal-line: #d3cfbb;
+  --mcal-ink: #1d3d2e;
+  border: 1px solid var(--mcal-line);
+  background: #f8f7ef;
+  color: var(--mcal-ink);
+}
+.pcw-mcal-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.pcw-mcal-head {
+  background: #123b29;
+  color: #fff;
+}
+.pcw-mcal-head > div {
+  padding: 13px 6px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+}
+.pcw-mcal-head > div:last-child {
+  border-right: 0;
+}
+.pcw-mcal-wd-short {
+  display: none;
+}
+.pcw-mcal-day {
+  position: relative;
+  min-height: 150px;
+  padding: 12px 12px 14px;
+  border-right: 1px solid var(--mcal-line);
+  border-top: 1px solid var(--mcal-line);
+  background: #fbfaf3;
+}
+.pcw-mcal-day:nth-child(7n) {
+  border-right: 0;
+}
+.pcw-mcal-day.is-other {
+  background: #efede2;
+}
+.pcw-mcal-day.is-other .pcw-mcal-num {
+  color: #8c9a91;
+}
+.pcw-mcal-day.is-selected {
+  background: #fff1c9;
+  box-shadow: inset 0 0 0 2px var(--pcw-yellow);
+}
+.pcw-mcal-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  margin: -4px 0 0 -6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--mcal-ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+}
+button.pcw-mcal-num {
+  cursor: pointer;
+}
+button.pcw-mcal-num:hover,
+button.pcw-mcal-num:focus-visible {
+  background: var(--pcw-card-photo, #e7e0c8);
+}
+.pcw-mcal-day.is-today .pcw-mcal-num {
+  background: var(--pcw-pink);
+  color: var(--pcw-green);
+}
+.pcw-mcal-day ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.pcw-mcal-day li {
+  position: relative;
+}
+.pcw-mcal-day li + li {
+  border-top: 1px solid var(--mcal-line);
+}
+.pcw-mcal-ev {
+  display: block;
+  padding: 9px 0 9px 14px;
+  position: relative;
+  color: var(--pcw-green);
+  font-size: 15px;
+  line-height: 1.35;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.pcw-mcal-ev::before {
+  /* category colour */
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 15px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tone, var(--pcw-green));
+  box-shadow: 0 0 0 1px rgba(29, 61, 46, 0.35);
+}
+.pcw-mcal-ev:hover,
+.pcw-mcal-ev:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  outline: none;
+}
+.pcw-mcal-day.is-past .pcw-mcal-ev {
+  color: #50685c;
+}
+
+/* details card */
+.pcw-mcal-pop {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 10px);
+  left: -4px;
+  width: 340px;
+  max-width: 80vw;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #fbfaf3;
+  border: 1px solid #8a948d;
+  box-shadow: 0 16px 36px rgba(16, 48, 33, 0.22);
+  color: var(--mcal-ink);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0s linear 0.15s;
+  pointer-events: none;
+}
+.pcw-mcal-pop::before {
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: 26px;
+  width: 16px;
+  height: 16px;
+  background: #fbfaf3;
+  border-left: 1px solid #8a948d;
+  border-top: 1px solid #8a948d;
+  transform: rotate(45deg);
+}
+.is-right > .pcw-mcal-pop {
+  left: auto;
+  right: -4px;
+}
+.is-right > .pcw-mcal-pop::before {
+  left: auto;
+  right: 26px;
+}
+.pcw-mcal-pop b {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--pcw-green);
+  margin-bottom: 4px;
+}
+.pcw-mcal-pop-date {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 15px;
+  font-weight: 600;
+}
+.pcw-mcal-pop-time {
+  font-size: 15px;
+}
+.pcw-mcal-pop-who {
+  font-size: 14px;
+  line-height: 1.45;
+  color: #3d5a4b;
+}
+.pcw-mcal-pop em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a4b3c;
+}
+.pcw-mcal-day li:hover > .pcw-mcal-pop,
+.pcw-mcal-ev:focus-visible + .pcw-mcal-pop {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+/* no hover on touch screens: tapping a title just opens the event */
+@media (hover: none) {
+  .pcw-mcal-day li:hover > .pcw-mcal-pop {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+/* programme heading row */
+.pcw-prog-headrow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.pcw-prog-headrow .pcw-prog-month {
+  margin: 0;
+}
+
+/* laptops: shorter days, short weekday names */
+@media (max-width: 1199px) {
+  .pcw-mcal-day {
+    min-height: 130px;
+    padding: 10px 9px 12px;
+  }
+  .pcw-mcal-ev {
+    font-size: 14px;
+  }
+}
+@media (max-width: 1050px) {
+  .pcw-mcal-wd-long {
+    display: none;
+  }
+  .pcw-mcal-wd-short {
+    display: inline;
+  }
+}
+/* tablets and phones: the programme list is the calendar */
+@media (max-width: 860px) {
+  .pcw-mcal {
+    display: none;
+  }
+  .pcw-mcal-bar {
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .pcw-mcal-bar h3 {
+    flex: 1;
+    min-width: 0;
+    font-size: 22px;
+  }
+  .pcw-mcal-arrow {
+    width: 44px;
+    height: 44px;
+  }
+  .pcw-mcal-today {
+    margin-left: 0;
+  }
+  .pcw-prog .pcw-mcal-today {
+    margin-top: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pcw-mcal-pop {
+    transition: none !important;
+  }
+}

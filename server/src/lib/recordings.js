@@ -69,12 +69,50 @@ export function publicRecording(x) {
 }
 
 // Event videos (YouTube link added on an event) also show under Videos.
+// Admin > Events > "Content type": where an event's recording also shows in Recordings.
+//   'video'   -> Recordings > Videos,  'podcast' -> Recordings > Podcasts,  ''  -> only on the event page.
+// Events saved before this option existed (no contentType) keep their old place: Videos, if they have a link.
+export const EVENT_CONTENT_TYPES = ['', 'video', 'podcast'];
+export function eventContentType(e) {
+  if (!(e.youtubeUrl || e.recordingUrl)) return '';
+  if (e.contentType === undefined || e.contentType === null) return 'video';
+  return e.contentType === 'video' || e.contentType === 'podcast' ? e.contentType : '';
+}
+// the events that show in one Recordings tab
+// (Reports: events with a report added under Content type > Report)
+export const eventsOfType = (events, type) =>
+  type === 'report' ? events.filter((e) => e.report?.url).map(eventAsReport) : events.filter((e) => eventContentType(e) === type).map(eventAsVideo);
+
+export function eventAsReport(e) {
+  const names = (e.speakers || []).map((s) => s.name).filter((n) => n && !n.startsWith('[')).join(', ');
+  return {
+    id: 'event-report-' + e._id,
+    slug: `${e.slug}-report`,
+    type: 'report',
+    title: e.report.title || e.title,
+    number: '',
+    speakers: names || e.tagline || '',
+    category: e.category || '',
+    city: e.city || '',
+    date: e.date || '',
+    link: e.report.url,
+    image: e.image || '',
+    description: names ? e.tagline || '' : '',
+    media: mediaFor(e.report.url),
+    fileName: e.report.name || '',
+    fileSize: e.report.size || 0,
+    sample: !!e.sample,
+    source: 'event',
+    eventUrl: `/event/${e.slug}`,
+  };
+}
+
 export function eventAsVideo(e) {
   const names = (e.speakers || []).map((s) => s.name).filter((n) => n && !n.startsWith('[')).join(', ');
   return {
     id: 'event-' + e._id,
     slug: e.slug,
-    type: 'video',
+    type: eventContentType(e) || 'video',
     title: e.title,
     number: '',
     speakers: names || e.tagline || '',

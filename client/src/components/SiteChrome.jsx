@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import Navbar from '../sections/Navbar.jsx';
 import Footer from '../sections/Footer.jsx';
 import { connectNewsletter } from '../features/newsletter.js';
+import { connectNavMenus } from '../features/navMenus.js';
 import { useSiteMotion } from '../motion.js';
 
 // Nav + footer for the inner pages (same markup as the home page).
@@ -38,7 +39,11 @@ export default function SiteChrome({ active, light = false, children }) {
     const year = document.getElementById('currentYear');
     if (year) year.textContent = new Date().getFullYear();
     connectNewsletter();
-    return () => burger?.removeEventListener('click', toggle);
+    const offMenus = connectNavMenus();
+    return () => {
+      burger?.removeEventListener('click', toggle);
+      offMenus();
+    };
   }, [active]);
 
   return (

@@ -13,6 +13,7 @@ export default function EventCard({ event, onRsvp, showCity = false }) {
     : [formatDate(event.date, { weekday: 'short', day: 'numeric', month: 'short' }), timeRange(event)].filter(Boolean).join(' · ');
   const photo = event.image || (event.youtubeId ? ytThumb(event.youtubeId) : '');
   const hasVideo = !!event.video;
+  const podcast = event.contentType === 'podcast';
   return (
     <article className={`pcw-card${past ? ' is-past' : ''}`} id={`event-${event.id}`}>
       <a className="pcw-card-photo" href={href} tabIndex={-1} aria-hidden="true">
@@ -31,12 +32,18 @@ export default function EventCard({ event, onRsvp, showCity = false }) {
         </p>
         <h3 className="pcw-card-title">
           <a href={href}>
-            {hasVideo && (
-              <svg className="pcw-card-title-icon" viewBox="0 0 24 16" width="22" height="15" aria-label="Video">
-                <rect x="0" y="1" width="16" height="14" rx="2" fill="currentColor" />
-                <path d="M17 6l7-4v12l-7-4z" fill="currentColor" />
-              </svg>
-            )}
+            {hasVideo &&
+              (podcast ? (
+                <svg className="pcw-card-title-icon" viewBox="0 0 24 24" width="18" height="18" aria-label="Podcast">
+                  <rect x="8" y="1" width="8" height="14" rx="4" fill="currentColor" />
+                  <path d="M4 11a8 8 0 0016 0M12 19v4" stroke="currentColor" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+                </svg>
+              ) : (
+                <svg className="pcw-card-title-icon" viewBox="0 0 24 16" width="22" height="15" aria-label="Video">
+                  <rect x="0" y="1" width="16" height="14" rx="2" fill="currentColor" />
+                  <path d="M17 6l7-4v12l-7-4z" fill="currentColor" />
+                </svg>
+              ))}
             {event.title}
           </a>
         </h3>
@@ -55,8 +62,8 @@ export default function EventCard({ event, onRsvp, showCity = false }) {
           )}
           {STATUS_TEXT[event.rsvpStatus] && <span className="pcw-card-status">{STATUS_TEXT[event.rsvpStatus]}</span>}
           {hasVideo && past && (
-            <a className="pcw-card-btn" href={`${href}#watch`} aria-label={`Watch ${event.title}`}>
-              Watch
+            <a className="pcw-card-btn" href={`${href}#watch`} aria-label={`${podcast ? 'Listen to' : 'Watch'} ${event.title}`}>
+              {podcast ? 'Listen' : 'Watch'}
             </a>
           )}
         </div>

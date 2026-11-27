@@ -1089,3 +1089,92 @@ body.adm-body {
   font-size: 14px;
   line-height: 1.5;
 }
+
+/* event documents */
+.adm-doc-lead {
+  display: block;
+  margin: -2px 0 10px;
+}
+.adm-att-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.adm-att {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 10px 12px;
+  border: 1px solid #d9d4c3;
+  border-radius: 14px;
+  background: #fff;
+}
+.adm-att-fields {
+  flex: 1 1 220px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.adm-att-fields input {
+  width: 100%;
+}
+.adm-att-fields small {
+  color: #5f6f66;
+}
+
+/* report popup (Events > Content type > Report) */
+.adm-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(16, 40, 28, 0.55);
+}
+.adm-dialog {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 26px 26px 22px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
+}
+.adm-dialog h3 {
+  margin: 0;
+  font-size: 22px;
+}
+.adm-dialog > .adm-hint {
+  margin-top: -8px;
+}
+.adm-dialog .adm-field {
+  margin: 0;
+}
+.adm-dialog-tabs label {
+  flex: 1;
+  justify-content: center;
+}
+.adm-dialog-body {
+  min-height: 64px;
+}
+.adm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.adm-report-chip {
+  margin-top: 10px;
+}
+.adm-report-chip small {
+  overflow-wrap: anywhere;
+}

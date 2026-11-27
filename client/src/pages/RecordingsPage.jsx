@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import SiteChrome from '../components/SiteChrome.jsx';
+import DocViewer from '../components/DocViewer.jsx';
 import { api, formatDate, ytThumb } from '../api.js';
 import { CITIES } from '../cities.js';
 import '../styles/pages.css';
@@ -25,8 +26,7 @@ const actionLabel = (item) => {
   const k = item.media?.kind;
   if (!item.link || k === 'none') return '';
   if (item.type === 'report') {
-    if (item.media?.uploaded) return k === 'pdf' ? 'Read report' : 'Download';
-    return k === 'drive' ? 'Read report' : 'Open report';
+    return 'Read report';
   }
   if (k === 'youtube' || k === 'video' || k === 'vimeo') return 'Watch';
   if (PLAYABLE.includes(k)) return 'Listen';
@@ -117,8 +117,10 @@ function sourceName(item) {
 function Card({ item, tab, onPlay }) {
   const [img, setImg] = useState(cover(item));
   const label = actionLabel(item);
-  const playable = PLAYABLE.includes(item.media?.kind);
+  // reports open in the document viewer on this page; videos / podcasts in the player
+  const playable = PLAYABLE.includes(item.media?.kind) || (item.type === 'report' && !!item.link);
   const open = (e) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey) return; // ctrl/cmd-click still opens a new tab
     if (!item.link) return e.preventDefault();
     if (playable) {
       e.preventDefault();
@@ -130,7 +132,7 @@ function Card({ item, tab, onPlay }) {
     : null;
   const Wrap = linkProps ? 'a' : 'div';
   return (
-    <article className="pcw-rec-card">
+    <article id={`rec-${item.slug}`} className="pcw-rec-card">
       <Wrap className="pcw-rec-cover" {...(linkProps || {})} aria-label={linkProps && label ? `${label}: ${item.title}` : undefined}>
         {img ? (
           <img
@@ -145,7 +147,7 @@ function Card({ item, tab, onPlay }) {
             <span>PCW · Platform for Collective Wisdom</span>
           </span>
         )}
-        {playable && (
+        {playable && item.type !== 'report' && (
           <span className="pcw-rec-play" aria-hidden="true">
             <svg viewBox="0 0 48 48" width="48" height="48">
               <circle cx="24" cy="24" r="24" fill="#ff5c39" />
@@ -223,6 +225,18 @@ export default function RecordingsPage() {
     setTab(t);
   };
   const close = useCallback(() => setPlaying(null), []);
+
+  // link from an event page ("Watch more"): /recordings/videos#play=<slug> opens that video
+  useEffect(() => {
+    const m = window.location.hash.match(/^#play=(.+)$/);
+    if (!data || !m) return;
+    const slug = decodeURIComponent(m[1]);
+    const item = data.items.find((x) => x.slug === slug);
+    window.history.replaceState({}, '', window.location.pathname);
+    if (!item) return;
+    if (PLAYABLE.includes(item.media?.kind) || item.type === 'report') setPlaying(item);
+    else setTimeout(() => document.getElementById(`rec-${slug}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 200);
+  }, [data]);
 
   const s = q.trim().toLowerCase();
   const list = useMemo(
@@ -320,7 +334,15 @@ export default function RecordingsPage() {
             ))}
         </div>
       </div>
-      {playing && <PlayerModal item={playing} tab={tab} onClose={close} />}
+      {playing &&
+        (playing.type === 'report' ? (
+          <DocViewer
+            doc={{ url: playing.link, title: playing.title, kicker: [tab.one, CITIES[playing.city]?.name, playing.category].filter(Boolean).join(' · ') }}
+            onClose={close}
+          />
+        ) : (
+          <PlayerModal item={playing} tab={tab} onClose={close} />
+        ))}
     </SiteChrome>
   );
 }

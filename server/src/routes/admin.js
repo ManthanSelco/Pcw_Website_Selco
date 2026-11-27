@@ -108,6 +108,9 @@ export function adminRoutes(store, auth, { storage }) {
       // keep old links working (shared on WhatsApp, found in Google): they redirect to the new one
       data.oldSlugs = [...new Set([...(old.oldSlugs || []), old.slug].filter((x) => x && x !== data.slug))].slice(-20);
       if (old.image && old.image !== data.image) removeUpload(old.image);
+      const keepDocs = new Set(data.attachments.map((a) => a.url));
+      if (data.report?.url) keepDocs.add(data.report.url);
+      for (const a of [...(old.attachments || []), ...(old.report?.url ? [old.report] : [])]) if (!keepDocs.has(a.url)) removeDoc(a.url); // removed documents leave S3
       const upd = await events.updateOne({ _id: old._id }, { ...data, updatedAt: new Date().toISOString() });
       // keep RSVP list titles in step
       for (const x of await rsvps.find({ eventId: old._id })) await rsvps.updateOne({ _id: x._id }, { eventTitle: data.title, eventDate: data.date, city: data.city });
@@ -121,6 +124,8 @@ export function adminRoutes(store, auth, { storage }) {
       const old = await events.findOne({ _id: req.params.id });
       if (!old) return res.status(404).json({ error: 'Event not found' });
       removeUpload(old.image);
+      for (const a of old.attachments || []) removeDoc(a.url);
+      if (old.report?.url) removeDoc(old.report.url);
       await events.deleteOne({ _id: old._id });
       for (const x of await rsvps.find({ eventId: old._id })) await rsvps.deleteOne({ _id: x._id });
       res.json({ ok: true });
@@ -133,6 +138,8 @@ export function adminRoutes(store, auth, { storage }) {
       let n = 0;
       for (const e of await events.find({ sample: true })) {
         removeUpload(e.image);
+        for (const a of e.attachments || []) removeDoc(a.url);
+        if (e.report?.url) removeDoc(e.report.url);
         await events.deleteOne({ _id: e._id });
         for (const x of await rsvps.find({ eventId: e._id })) await rsvps.deleteOne({ _id: x._id });
         n++;
@@ -219,7 +226,7 @@ export function adminRoutes(store, auth, { storage }) {
     '/upload-doc/discard',
     h(async (req, res) => {
       const url = String(req.body?.url || '');
-      const used = (await recordings.find({})).some((x) => x.link === url);
+      const used = (await recordings.find({})).some((x) => x.link === url) || (await events.find({})).some((e) => e.report?.url === url || (e.attachments || []).some((a) => a.url === url));
       if (!used) removeDoc(url);
       res.json({ ok: true, removed: !used && !!docNameFromUrl(url) });
     })

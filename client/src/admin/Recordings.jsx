@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAdmin, ConfirmButton } from './AdminApp.jsx';
 import { Field, ImageUpload } from './Events.jsx';
 import { formatDate, ytThumb } from '../api.js';
+import { DOC_MAX_MB, DOC_ACCEPT, fileSize, checkDoc, uploadDoc } from './docUpload.js';
 
 // Admin > Recordings: Podcasts, Reports, Videos shown on /recordings
 const TYPES = [
@@ -40,8 +41,8 @@ function linkKind(url) {
 }
 
 const isUploaded = (link) => /^\/files\/[a-f0-9-]{36}\.(pdf|docx?|pptx?)$/i.test(link || '');
-const mb = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n ? `${Math.max(1, Math.round(n / 1024))} KB` : '');
-const MAX_MB = 50;
+const mb = fileSize;
+const MAX_MB = DOC_MAX_MB;
 
 // Upload a report file (PDF, Word, PowerPoint, max 50 MB). Bigger files: share a link instead.
 function DocUpload({ value, onChange }) {
@@ -51,32 +52,13 @@ function DocUpload({ value, onChange }) {
   function pick(file) {
     setErr('');
     if (!file) return;
-    if (!/\.(pdf|docx?|pptx?)$/i.test(file.name)) return setErr('Please choose a PDF, Word (.doc/.docx) or PowerPoint (.ppt/.pptx) file.');
-    if (file.size > MAX_MB * 1024 * 1024)
-      return setErr(`This file is ${mb(file.size)}, more than ${MAX_MB} MB. Use a Google Drive (or other) share link instead, as explained below.`);
-    const fd = new FormData();
-    fd.append('file', file);
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/admin/upload-doc');
-    xhr.withCredentials = true;
-    xhr.upload.onprogress = (e) => e.lengthComputable && setPct(Math.round((e.loaded / e.total) * 100));
-    xhr.onload = () => {
-      setPct(null);
-      let body = {};
-      try {
-        body = JSON.parse(xhr.responseText);
-      } catch {
-        /* not JSON (e.g. the server's upload limit) */
-      }
-      if (xhr.status === 200 && body.url) onChange({ url: body.url, name: body.name, size: body.size });
-      else setErr(body.error || (xhr.status === 413 ? `The file is too large for the server. Use a share link instead.` : 'Upload failed. Please try again.'));
-    };
-    xhr.onerror = () => {
-      setPct(null);
-      setErr('Upload failed. Check the internet connection and try again.');
-    };
+    const bad = checkDoc(file);
+    if (bad) return setErr(bad);
     setPct(0);
-    xhr.send(fd);
+    uploadDoc(file, setPct)
+      .then(onChange)
+      .catch((e) => setErr(e.message))
+      .finally(() => setPct(null));
   }
   return (
     <div className="adm-field is-wide adm-doc">
@@ -114,7 +96,7 @@ function DocUpload({ value, onChange }) {
         ref={input}
         type="file"
         hidden
-        accept=".pdf,.doc,.docx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        accept={DOC_ACCEPT}
         onChange={(e) => {
           pick(e.target.files?.[0]);
           e.target.value = '';

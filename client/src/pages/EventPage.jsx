@@ -4,8 +4,92 @@ import SiteChrome from '../components/SiteChrome.jsx';
 import EventCard from '../components/EventCard.jsx';
 import RsvpModal from '../components/RsvpModal.jsx';
 import VideoPlayer from '../components/VideoPlayer.jsx';
+import DocViewer from '../components/DocViewer.jsx';
 import { api, formatDate, timeRange } from '../api.js';
 import { CITIES } from '../cities.js';
+
+const DOC_LABEL = { pdf: 'PDF', doc: 'Word', docx: 'Word', ppt: 'PowerPoint', pptx: 'PowerPoint', link: 'Link' };
+const fileSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n ? `${Math.max(1, Math.round(n / 1024))} KB` : '');
+
+// the event's report (first, marked "Report") + documents attached to the event (agenda, slides…)
+function Documents({ report, items }) {
+  const [open, setOpen] = useState(null);
+  const all = [...(report ? [{ ...report, name: report.title, isReport: true }] : []), ...items];
+  return (
+    <section className="pcw-wrap pcw-docs" id="documents" aria-labelledby="docs-title">
+      <h2 className="pcw-h3" id="docs-title">
+        Documents
+      </h2>
+      <ul className="pcw-docs-list">
+        {all.map((a) => {
+          return (
+            <li key={a.url}>
+              <a
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="pcw-doc"
+                onClick={(ev) => {
+                  if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return;
+                  ev.preventDefault();
+                  setOpen(a);
+                }}
+              >
+                <span className={`pcw-doc-icon is-${a.kind}`} aria-hidden="true">
+                  {a.kind === 'link' ? '↗' : a.kind.replace('x', '').toUpperCase()}
+                </span>
+                <span className="pcw-doc-text">
+                  <b>{a.name}</b>
+                  <small>{[a.isReport && 'Report', DOC_LABEL[a.kind] || 'File', fileSize(a.size)].filter(Boolean).join(' · ')}</small>
+                </span>
+                <span className="pcw-doc-action">View</span>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+      {open && <DocViewer doc={{ url: open.url, title: open.name, kicker: open.isReport ? 'Report' : 'Document' }} onClose={() => setOpen(null)} />}
+    </section>
+  );
+}
+
+// "Watch more": recordings of other events + videos from Recordings
+function MoreVideos({ items }) {
+  return (
+    <section className="pcw-wrap pcw-block pcw-more-videos" aria-labelledby="more-videos-title">
+      <div className="pcw-block-head">
+        <h2 className="pcw-h2" id="more-videos-title">
+          Watch more
+        </h2>
+        <a className="pcw-pill pcw-pill-outline" href="/recordings/videos">
+          All videos <span aria-hidden="true">→</span>
+        </a>
+      </div>
+      <div className="pcw-vids">
+        {items.map((v) => (
+          <a key={v.id} className="pcw-vid" href={v.href}>
+            <span className="pcw-vid-photo">
+              {v.image ? <img src={v.image} alt="" loading="lazy" onError={(ev) => (ev.currentTarget.style.visibility = 'hidden')} /> : null}
+              <span className="pcw-vid-play" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22">
+                  <path d="M8 5v14l11-7z" fill="currentColor" />
+                </svg>
+              </span>
+            </span>
+            <span className="pcw-vid-body">
+              <small>
+                {[v.source === 'event' ? 'Event video' : 'Video', v.category, CITIES[v.city]?.name].filter(Boolean).join(' · ')}
+                {v.sample && <span className="pcw-sample">Sample</span>}
+              </small>
+              <b>{v.title}</b>
+              {v.date && <span className="pcw-vid-date">{formatDate(v.date)}</span>}
+            </span>
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
 import '../styles/pages.css';
 
 const STATUS = {
@@ -51,6 +135,7 @@ export default function EventPage({ slug }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [rsvp, setRsvp] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const load = useCallback(() => {
     api(`/api/events/${encodeURIComponent(slug)}`)
@@ -129,6 +214,11 @@ export default function EventPage({ slug }) {
                 </a>
               )}
               {STATUS[e.rsvpStatus] && <span className="pcw-detail-status">{STATUS[e.rsvpStatus]}</span>}
+              {e.report && (
+                <button className="pcw-pill pcw-pill-pink" onClick={() => setReportOpen(true)}>
+                  Read the report
+                </button>
+              )}
               {e.rsvpStatus !== 'over' && (
                 <a className="pcw-pill pcw-pill-outline" href={`/api/events/${encodeURIComponent(e.slug)}/ics`}>
                   Add to calendar
@@ -136,12 +226,13 @@ export default function EventPage({ slug }) {
               )}
               <Share event={e} />
             </div>
+            {reportOpen && <DocViewer doc={{ url: e.report.url, title: e.report.title, kicker: 'Report' }} onClose={() => setReportOpen(false)} />}
           </section>
 
           {e.video && (
             <section className="pcw-wrap pcw-detail-video" id="watch">
-              <h2 className="pcw-h3">Watch</h2>
-              <VideoPlayer video={e.video} title={e.title} poster={e.image || (e.youtubeId ? `https://i.ytimg.com/vi/${e.youtubeId}/hqdefault.jpg` : '')} />
+              <h2 className="pcw-h3">{e.contentType === 'podcast' ? 'Listen' : 'Watch'}</h2>
+              <VideoPlayer listen={e.contentType === 'podcast'} video={e.video} title={e.title} poster={e.image || (e.youtubeId ? `https://i.ytimg.com/vi/${e.youtubeId}/hqdefault.jpg` : '')} />
             </section>
           )}
 
@@ -177,6 +268,10 @@ export default function EventPage({ slug }) {
               </aside>
             )}
           </section>
+
+          {(e.report || e.attachments?.length > 0) && <Documents report={e.report} items={e.attachments || []} />}
+
+          {data.videos?.length > 0 && <MoreVideos items={data.videos} />}
 
           {data.related.length > 0 && (
             <section className="pcw-wrap pcw-block">

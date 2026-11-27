@@ -1,4 +1,5 @@
 import { youtubeId, mediaFor } from './media.js';
+import { eventContentType } from './recordings.js';
 // Event data helpers: cleaning admin input, public shape, YouTube links, slugs, calendar files.
 import { CITIES } from './cities.js';
 
@@ -31,6 +32,10 @@ export function slugify(s) {
 }
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+// documents attached to an event: uploaded file (/files/<uuid>.pdf …) or a share link (Google Drive etc.)
+export const UPLOADED_DOC_RE = /^\/files\/[a-f0-9-]{36}\.(pdf|doc|docx|ppt|pptx)$/;
+const LINK_RE = /^https?:\/\/[^\s<>"]+\.[^\s<>"]+$/i;
+export const MAX_ATTACHMENTS = 10;
 const str = (v, max) => String(v ?? '').trim().slice(0, max);
 
 // Clean + validate event data coming from the admin panel / import. Returns { data, errors }
@@ -48,6 +53,7 @@ export function cleanEvent(b) {
     image: str(b.image, 500),
     description: str(b.description, 20000),
     youtubeUrl: str(b.youtubeUrl ?? b.recordingUrl, 1000),
+    contentType: ['video', 'podcast'].includes(b.contentType) ? b.contentType : '',
     rsvp: RSVP_MODES.includes(b.rsvp) ? b.rsvp : b.rsvpOpen === false ? 'closed' : 'open',
     rsvpUrl: str(b.rsvpUrl, 1000),
     capacity: b.capacity === '' || b.capacity == null ? null : Number(b.capacity),
@@ -56,7 +62,28 @@ export function cleanEvent(b) {
       .map((s) => ({ name: str(s?.name, 120), role: str(s?.role, 200) }))
       .filter((s) => s.name)
       .slice(0, 12),
+    // the event's report (Content type > Report): one PDF / Word / PowerPoint file or a share link
+    report:
+      b.report && str(b.report.url, 1000)
+        ? { url: str(b.report.url, 1000), name: str(b.report.name, 150), size: Math.max(0, Math.round(Number(b.report.size) || 0)), title: str(b.report.title, 200) }
+        : null,
+    attachments: (Array.isArray(b.attachments) ? b.attachments : [])
+      .map((a) => ({ url: str(a?.url, 1000), name: str(a?.name, 150), size: Math.max(0, Math.round(Number(a?.size) || 0)) }))
+      .filter((a) => a.url),
   };
+  if (data.report) {
+    const r = data.report, uploaded = UPLOADED_DOC_RE.test(r.url);
+    if (!uploaded && !LINK_RE.test(r.url)) errors.report = 'The report link must be a full link starting with https://';
+    if (!uploaded) r.size = 0;
+    if (!r.name) r.name = uploaded ? `Report.${r.url.split('.').pop()}` : 'Report';
+  }
+  if (data.attachments.length > MAX_ATTACHMENTS) errors.attachments = `Up to ${MAX_ATTACHMENTS} documents per event`;
+  for (const a of data.attachments) {
+    const uploaded = UPLOADED_DOC_RE.test(a.url);
+    if (!uploaded && !LINK_RE.test(a.url)) errors.attachments = 'Each document link must be a full link starting with https://';
+    if (!uploaded) a.size = 0;
+    if (!a.name) a.name = uploaded ? `Document.${a.url.split('.').pop()}` : 'Document';
+  }
   if (!CITIES[data.city]) errors.city = 'Choose a city';
   if (!data.title) errors.title = 'Title is required';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date) || Number.isNaN(Date.parse(data.date))) errors.date = 'Choose a date';
@@ -106,7 +133,17 @@ export function publicEvent(e, today, taken = 0) {
     speakers: e.speakers || [],
     youtubeId: yt,
     // the recording, whatever site it is on
+    contentType: eventContentType(e),
     video: e.youtubeUrl || e.recordingUrl ? { ...mediaFor(e.youtubeUrl || e.recordingUrl), url: e.youtubeUrl || e.recordingUrl } : null,
+    report: e.report?.url
+      ? { url: e.report.url, name: e.report.name || 'Report', size: e.report.size || 0, title: e.report.title || e.title, kind: UPLOADED_DOC_RE.test(e.report.url) ? e.report.url.split('.').pop() : 'link' }
+      : null,
+    attachments: (e.attachments || []).map((a) => ({
+      url: a.url,
+      name: a.name || 'Document',
+      size: a.size || 0,
+      kind: UPLOADED_DOC_RE.test(a.url) ? a.url.split('.').pop() : 'link',
+    })),
     rsvpStatus: rsvpStatus(e, today, taken),
     rsvpUrl: rsvpStatus(e, today, taken) === 'link' ? e.rsvpUrl : '',
     sample: !!e.sample,

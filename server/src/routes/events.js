@@ -5,7 +5,7 @@ import { validate } from '../lib/validate.js';
 import { publicEvent, rsvpStatus, icsFor } from '../lib/events.js';
 import { getSpace } from '../lib/spaces.js';
 import { getSite } from '../lib/site.js';
-import { TYPES, TYPE_LABELS, publicRecording, eventAsVideo, sortRecordings } from '../lib/recordings.js';
+import { TYPES, TYPE_LABELS, publicRecording, eventAsVideo, eventsOfType, eventContentType, sortRecordings } from '../lib/recordings.js';
 import { youtubeId } from '../lib/events.js';
 
 const formLimit = () =>
@@ -76,16 +76,15 @@ export function eventRoutes(store) {
   });
 
   // GET /api/recordings?type=podcast|report|video -> { type, items[], categories[], counts{} }
-  // Videos also include events that have a YouTube link.
+  // Videos / Podcasts also include events whose "Content type" is Video / Podcast.
   r.get('/recordings', async (req, res, next) => {
     try {
       const type = TYPES.includes(req.query.type) ? req.query.type : 'podcast';
       const all = (await store.collection('recordings').find({})).filter((x) => x.published !== false);
-      const eventVideos = (await published()).filter((e) => e.youtubeUrl || e.recordingUrl);
+      const events = await published();
       const counts = {};
-      for (const t of TYPES) counts[t] = all.filter((x) => x.type === t).length + (t === 'video' ? eventVideos.length : 0);
-      let items = sortRecordings(all.filter((x) => x.type === type)).map(publicRecording);
-      if (type === 'video') items = sortRecordings([...items, ...eventVideos.map(eventAsVideo)]);
+      for (const t of TYPES) counts[t] = all.filter((x) => x.type === t).length + eventsOfType(events, t).length;
+      const items = sortRecordings([...sortRecordings(all.filter((x) => x.type === type)).map(publicRecording), ...eventsOfType(events, type)]);
       res.set('Cache-Control', 'no-cache');
       res.json({ type, label: TYPE_LABELS[type], items, counts, categories: [...new Set(items.map((x) => x.category).filter(Boolean))].sort() });
     } catch (e) {
@@ -107,7 +106,31 @@ export function eventRoutes(store) {
     }
   });
 
-  // GET /api/events/:slug -> { event, related[] }
+  // "Watch more" on an event page: other event recordings + videos from Recordings,
+  // same theme first, then same city, then newest. Up to 4.
+  async function suggestedVideos(e) {
+    const fromEvents = (await published()).filter((x) => x._id !== e._id && eventContentType(x) === 'video').map(eventAsVideo);
+    const fromRecordings = (await store.collection('recordings').find({}))
+      .filter((x) => x.type === 'video' && x.published !== false && x.link)
+      .map(publicRecording);
+    const score = (v) => (e.category && v.category === e.category ? 2 : 0) + (v.city === e.city ? 1 : 0);
+    return [...fromEvents, ...fromRecordings]
+      .sort((a, b) => score(b) - score(a) || String(b.date || '').localeCompare(String(a.date || '')))
+      .slice(0, 4)
+      .map((v) => ({
+        id: v.id,
+        title: v.title,
+        image: v.image || (v.media?.youtubeId ? `https://i.ytimg.com/vi/${v.media.youtubeId}/hqdefault.jpg` : ''),
+        date: v.date,
+        category: v.category,
+        city: v.city,
+        source: v.source, // 'event' = recording of a past event, 'recording' = from Recordings > Videos
+        href: v.source === 'event' ? `${v.eventUrl}#watch` : `/recordings/videos#play=${encodeURIComponent(v.slug)}`,
+        sample: v.sample,
+      }));
+  }
+
+  // GET /api/events/:slug -> { event, related[], videos[] }
   r.get('/events/:slug', async (req, res, next) => {
     try {
       const e = await findBySlug(req.params.slug);
@@ -118,7 +141,7 @@ export function eventRoutes(store) {
         .filter((x) => x._id !== e._id && x.city === e.city && x.date >= today)
         .slice(0, 3)
         .map((x) => publicEvent(x, today, taken[x._id]));
-      res.json({ today, event: publicEvent(e, today, taken[e._id]), related });
+      res.json({ today, event: publicEvent(e, today, taken[e._id]), related, videos: await suggestedVideos(e) });
     } catch (err) {
       next(err);
     }

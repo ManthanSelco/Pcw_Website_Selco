@@ -337,7 +337,7 @@ test('event video: any site (YouTube, Vimeo, Drive, other) is accepted and shown
     ['https://www.facebook.com/selco/videos/123', 'link'],
   ];
   for (const [url, kind] of cases) {
-    const ev = (await a.post('/api/admin/events').send({ ...base, title: `Video ${kind}`, youtubeUrl: url }).expect(200)).body;
+    const ev = (await a.post('/api/admin/events').send({ ...base, title: `Video ${kind}`, youtubeUrl: url, contentType: 'video' }).expect(200)).body;
     const pub = (await request(app).get(`/api/events/${ev.slug}`).expect(200)).body.event;
     assert.equal(pub.video.kind, kind);
     assert.equal(pub.video.url, url);
@@ -394,4 +394,167 @@ test('report upload: PDF/Word/PowerPoint only, 50 MB limit, served with its name
   assert.equal((await a.post('/api/admin/upload-doc/discard').send({ url: upPpt.url }).expect(200)).body.removed, true);
   assert.ok(!fs.existsSync(path.join(dir, upPpt.url.split('/').pop())));
   await a.delete(`/api/admin/recordings/${rec._id}`).expect(200);
+});
+
+test('event documents: upload, link, served with name, hidden when unpublished, cleaned up', async () => {
+  const a = request.agent(app);
+  await a.post('/api/admin/login').send({ username: 'manthan', password: 'Selco@2026' }).expect(200);
+  const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(500, 0x20)]);
+  const up1 = (await a.post('/api/admin/upload-doc').attach('file', pdf, 'Agenda.pdf').expect(200)).body;
+  const pptx = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('....ppt/presentation.xml....')]);
+  const up2 = (await a.post('/api/admin/upload-doc').attach('file', pptx, 'Slides.pptx').expect(200)).body;
+  const dir = path.join(tmp, 'uploads', 'files');
+  const base = { city: 'bangalore', title: 'Docs Event', date: fut(-3), category: 'Talks' };
+
+  // bad link refused
+  let r = await a.post('/api/admin/events').send({ ...base, attachments: [{ url: 'not a link', name: 'x' }] }).expect(400);
+  assert.match(r.body.errors.attachments, /https/);
+  // more than 10 refused
+  r = await a.post('/api/admin/events').send({ ...base, attachments: Array.from({ length: 11 }, (_, i) => ({ url: `https://example.org/${i}.pdf`, name: `D${i}` })) }).expect(400);
+  assert.match(r.body.errors.attachments, /10/);
+
+  const ev = (
+    await a
+      .post('/api/admin/events')
+      .send({
+        ...base,
+        attachments: [
+          { url: up1.url, name: 'Agenda.pdf', size: up1.size },
+          { url: up2.url, name: 'Slides', size: up2.size },
+          { url: 'https://drive.google.com/file/d/Big123/view', name: 'Full report (Drive)', size: 999 },
+          { url: '', name: 'empty row dropped' },
+        ],
+      })
+      .expect(200)
+  ).body;
+  assert.equal(ev.attachments.length, 3);
+  assert.equal(ev.attachments[2].size, 0); // links have no size
+
+  const pub = (await request(app).get(`/api/events/${ev.slug}`).expect(200)).body;
+  assert.deepEqual(
+    pub.event.attachments.map((x) => x.kind),
+    ['pdf', 'pptx', 'link']
+  );
+  assert.ok(Array.isArray(pub.videos));
+  // files are served with their names
+  assert.match((await request(app).get(up1.url).expect(200)).headers['content-disposition'], /^inline; filename="Agenda\.pdf"/);
+  assert.match((await request(app).get(up2.url).expect(200)).headers['content-disposition'], /^attachment; filename="Slides\.pptx"/);
+  // used files are not discarded
+  assert.equal((await a.post('/api/admin/upload-doc/discard').send({ url: up1.url }).expect(200)).body.removed, false);
+
+  // hidden event: its files are not public
+  await a.put(`/api/admin/events/${ev._id}`).send({ ...ev, published: false }).expect(200);
+  await request(app).get(up1.url).expect(404);
+  // removing a document deletes the file
+  await a.put(`/api/admin/events/${ev._id}`).send({ ...ev, published: true, attachments: [ev.attachments[0], ev.attachments[2]] }).expect(200);
+  await new Promise((res) => setTimeout(res, 50));
+  assert.ok(!fs.existsSync(path.join(dir, up2.url.split('/').pop())));
+  await request(app).get(up1.url).expect(200);
+  // old events without documents still work
+  const old = (await request(app).get('/api/events?city=bangalore')).body.past.find((x) => x.title !== 'Docs Event');
+  if (old) assert.deepEqual((await request(app).get(`/api/events/${old.slug}`)).body.event.attachments, []);
+  // deleting the event deletes its files
+  await a.delete(`/api/admin/events/${ev._id}`).expect(200);
+  await new Promise((res) => setTimeout(res, 50));
+  assert.ok(!fs.existsSync(path.join(dir, up1.url.split('/').pop())));
+});
+
+test('event page suggests other videos (event recordings + Recordings videos), not itself', async () => {
+  const a = request.agent(app);
+  await a.post('/api/admin/login').send({ username: 'manthan', password: 'Selco@2026' }).expect(200);
+  const e1 = (await a.post('/api/admin/events').send({ city: 'guwahati', title: 'Vid One', date: fut(-10), category: 'Film & Screenings', youtubeUrl: 'https://youtu.be/NT-gVjZCct8', contentType: 'video' }).expect(200)).body;
+  const e2 = (await a.post('/api/admin/events').send({ city: 'guwahati', title: 'Vid Two', date: fut(-5), category: 'Film & Screenings', youtubeUrl: 'https://vimeo.com/12345', contentType: 'video' }).expect(200)).body;
+  const rec = (await a.post('/api/admin/recordings').send({ type: 'video', title: 'Rec Video', link: 'https://youtu.be/ps65pgdaw6U', category: 'Film & Screenings', city: 'guwahati', date: fut(-1) }).expect(200)).body;
+  const v = (await request(app).get(`/api/events/${e1.slug}`).expect(200)).body.videos;
+  assert.ok(v.length >= 2 && v.length <= 4);
+  assert.ok(!v.some((x) => x.title === 'Vid One'));
+  const two = v.find((x) => x.title === 'Vid Two');
+  assert.equal(two.href, `/event/${e2.slug}#watch`);
+  const r = v.find((x) => x.title === 'Rec Video');
+  assert.equal(r.href, `/recordings/videos#play=${rec.slug}`);
+  assert.match(r.image, /ytimg\.com\/vi\/ps65pgdaw6U/);
+  for (const id of [e1._id, e2._id]) await a.delete(`/api/admin/events/${id}`).expect(200);
+  await a.delete(`/api/admin/recordings/${rec._id}`).expect(200);
+});
+
+test('content type: None stays in events, Video -> Recordings > Videos, Podcast -> Podcasts, old events stay in Videos', async () => {
+  const a = request.agent(app);
+  await a.post('/api/admin/login').send({ username: 'manthan', password: 'Selco@2026' }).expect(200);
+  const base = { city: 'bangalore', date: fut(-2), category: 'Talks' };
+  const none = (await a.post('/api/admin/events').send({ ...base, title: 'CT None', youtubeUrl: 'https://youtu.be/NT-gVjZCct8' }).expect(200)).body;
+  const vid = (await a.post('/api/admin/events').send({ ...base, title: 'CT Video', youtubeUrl: 'https://youtu.be/ps65pgdaw6U', contentType: 'video' }).expect(200)).body;
+  const pod = (await a.post('/api/admin/events').send({ ...base, title: 'CT Podcast', youtubeUrl: 'https://open.spotify.com/episode/4rOoJ6Egrf8K2IrywzwOMk', contentType: 'podcast' }).expect(200)).body;
+  const noLink = (await a.post('/api/admin/events').send({ ...base, title: 'CT No link', contentType: 'podcast' }).expect(200)).body;
+  const bogus = (await a.post('/api/admin/events').send({ ...base, title: 'CT Bogus', youtubeUrl: 'https://youtu.be/ps65pgdaw6U', contentType: 'report' }).expect(200)).body;
+  assert.equal(none.contentType, '');
+  assert.equal(bogus.contentType, '');
+  // an event saved before this option existed (no contentType in the database)
+  await store.collection('events').updateOne({ _id: vid._id }, { contentType: null });
+  const legacy = (await store.collection('events').find({})).find((e) => e._id === vid._id);
+  assert.equal(legacy.contentType ?? null, null);
+
+  const titles = async (type) => (await request(app).get(`/api/recordings?type=${type}`).expect(200)).body.items.map((x) => x.title);
+  const videos = await titles('video');
+  const podcasts = await titles('podcast');
+  assert.ok(videos.includes('CT Video')); // old event: still in Videos
+  assert.ok(!videos.includes('CT None') && !podcasts.includes('CT None'));
+  assert.ok(!videos.includes('CT Bogus'));
+  assert.ok(podcasts.includes('CT Podcast') && !videos.includes('CT Podcast'));
+  assert.ok(!podcasts.includes('CT No link'));
+  const podItem = (await request(app).get('/api/recordings?type=podcast')).body.items.find((x) => x.title === 'CT Podcast');
+  assert.equal(podItem.type, 'podcast');
+  assert.equal(podItem.media.kind, 'spotify');
+  assert.equal(podItem.eventUrl, `/event/${pod.slug}`);
+  const counts = (await request(app).get('/api/recordings?type=podcast')).body.counts;
+  assert.ok(counts.podcast >= 1);
+  // all of them are still normal events
+  const past = (await request(app).get('/api/events?city=bangalore')).body.past.map((e) => e.title);
+  for (const t of ['CT None', 'CT Video', 'CT Podcast', 'CT No link']) assert.ok(past.includes(t), t);
+  assert.equal((await request(app).get(`/api/events/${pod.slug}`)).body.event.contentType, 'podcast');
+  // "Watch more" only suggests videos
+  const sug = (await request(app).get(`/api/events/${none.slug}`)).body.videos.map((v) => v.title);
+  assert.ok(sug.includes('CT Video') && !sug.includes('CT Podcast'));
+  // SEO page for podcasts lists the event too
+  const html = (await request(app).get('/recordings/podcasts').expect(200)).text;
+  assert.match(html, /CT Podcast/);
+  for (const e of [none, vid, pod, noLink, bogus]) await a.delete(`/api/admin/events/${e._id}`).expect(200);
+});
+
+test('event report: optional, shows in Reports + event page, file served, cleaned up', async () => {
+  const a = request.agent(app);
+  await a.post('/api/admin/login').send({ username: 'manthan', password: 'Selco@2026' }).expect(200);
+  const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(400, 0x20)]);
+  const up = (await a.post('/api/admin/upload-doc').attach('file', pdf, 'Outcome.pdf').expect(200)).body;
+  const dir = path.join(tmp, 'uploads', 'files');
+  // upcoming event with nothing ticked is fine
+  const plain = (await a.post('/api/admin/events').send({ city: 'guwahati', title: 'Plain upcoming', date: fut(10) }).expect(200)).body;
+  assert.equal(plain.report, null);
+  assert.equal(plain.contentType, '');
+  // bad report link refused
+  const bad = await a.post('/api/admin/events').send({ city: 'guwahati', title: 'Bad', date: fut(-2), report: { url: 'nope' } }).expect(400);
+  assert.match(bad.body.errors.report, /https/);
+  // report + video together
+  const ev = (await a.post('/api/admin/events').send({ city: 'guwahati', title: 'Report Event', date: fut(-2), category: 'Talks', youtubeUrl: 'https://youtu.be/NT-gVjZCct8', contentType: 'video', report: { url: up.url, name: 'Outcome.pdf', size: up.size, title: '' } }).expect(200)).body;
+  const reps = (await request(app).get('/api/recordings?type=report').expect(200)).body.items;
+  const r = reps.find((x) => x.eventUrl === `/event/${ev.slug}`);
+  assert.ok(r, 'event report listed in Reports');
+  assert.equal(r.title, 'Report Event'); // empty title -> event title
+  assert.equal(r.link, up.url);
+  const vids = (await request(app).get('/api/recordings?type=video').expect(200)).body.items;
+  assert.ok(vids.some((x) => x.eventUrl === `/event/${ev.slug}`), 'still in Videos too');
+  const pub = (await request(app).get(`/api/events/${ev.slug}`).expect(200)).body.event;
+  assert.equal(pub.report.kind, 'pdf');
+  assert.match((await request(app).get(up.url).expect(200)).headers['content-disposition'], /Outcome\.pdf/);
+  assert.equal((await a.post('/api/admin/upload-doc/discard').send({ url: up.url }).expect(200)).body.removed, false);
+  // switch to a Drive link: the old file is deleted
+  await a.put(`/api/admin/events/${ev._id}`).send({ ...ev, report: { url: 'https://drive.google.com/file/d/X/view', title: 'Final report' } }).expect(200);
+  await new Promise((res) => setTimeout(res, 50));
+  assert.ok(!fs.existsSync(path.join(dir, up.url.split('/').pop())));
+  const r2 = (await request(app).get('/api/recordings?type=report')).body.items.find((x) => x.eventUrl === `/event/${ev.slug}`);
+  assert.equal(r2.title, 'Final report');
+  // untick report: gone from Reports, event stays in past events
+  await a.put(`/api/admin/events/${ev._id}`).send({ ...ev, report: null }).expect(200);
+  assert.ok(!(await request(app).get('/api/recordings?type=report')).body.items.some((x) => x.eventUrl === `/event/${ev.slug}`));
+  assert.ok((await request(app).get('/api/events?city=guwahati')).body.past.some((x) => x.slug === ev.slug));
+  for (const id of [plain._id, ev._id]) await a.delete(`/api/admin/events/${id}`).expect(200);
 });

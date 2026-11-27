@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAdmin, Link, ConfirmButton } from './AdminApp.jsx';
 import { formatDate, timeRange, ytThumb } from '../api.js';
+import { DOC_MAX_MB, DOC_ACCEPT, fileSize, checkDoc, uploadDoc } from './docUpload.js';
 
 const VENUES = { bangalore: 'PCW Space, Bengaluru', guwahati: 'PCW Space, Guwahati' };
 
@@ -22,8 +23,11 @@ const blank = (city = 'bangalore') => ({
   venue: VENUES[city],
   image: '',
   youtubeUrl: '',
+  contentType: '',
   description: '',
   speakers: [],
+  attachments: [],
+  report: null,
   rsvp: 'open',
   rsvpUrl: '',
   capacity: '',
@@ -45,7 +49,11 @@ function videoHint(url) {
   if (host === 'vimeo.com' || host === 'player.vimeo.com') return 'Vimeo: plays on the event page';
   if (host === 'drive.google.com') return 'Google Drive: plays on the event page (share it as "Anyone with the link")';
   if (/\.(mp4|webm|mov)$/i.test(u.pathname)) return 'Video file: plays on the event page';
-  return 'Opens in a new tab from the event page ("Watch the recording" button)';
+  if (host === 'open.spotify.com') return 'Spotify: plays on the event page';
+  if (host === 'soundcloud.com' || host === 'on.soundcloud.com') return 'SoundCloud: plays on the event page';
+  if (host === 'podcasts.apple.com') return 'Apple Podcasts: plays on the event page';
+  if (/\.(mp3|m4a|wav|ogg|aac)$/i.test(u.pathname)) return 'Audio file: plays on the event page';
+  return 'Opens in a new tab from the event page ("Watch / Listen" button)';
 }
 
 export function Field({ label, error, hint, children, wide }) {
@@ -103,16 +111,249 @@ export function ImageUpload({ value, onChange, onUploaded }) {
   );
 }
 
+// Documents for the event page (agenda, slides, report…): uploaded files (max 50 MB) or share links.
+function Attachments({ value, onChange, onUploaded, error }) {
+  const input = useRef(null);
+  const [pct, setPct] = useState(null);
+  const [msg, setMsg] = useState('');
+  const list = value || [];
+  const MAX = 10;
+  const update = (i, patch) => onChange(list.map((a, j) => (j === i ? { ...a, ...patch } : a)));
+
+  async function pick(files) {
+    setMsg('');
+    const all = [...(files || [])];
+    if (!all.length) return;
+    let next = [...list];
+    const problems = [];
+    for (const file of all) {
+      if (next.length >= MAX) {
+        problems.push(`Up to ${MAX} documents per event.`);
+        break;
+      }
+      const bad = checkDoc(file);
+      if (bad) {
+        problems.push(bad);
+        continue;
+      }
+      try {
+        const up = await uploadDoc(file, setPct);
+        onUploaded?.(up.url);
+        next = [...next, { url: up.url, name: up.name || file.name, size: up.size }];
+        onChange(next);
+      } catch (e) {
+        problems.push(`${file.name}: ${e.message}`);
+      }
+    }
+    setPct(null);
+    setMsg(problems.join(' '));
+  }
+
+  return (
+    <div className={`adm-field is-wide adm-doc ${error ? 'has-error' : ''}`}>
+      <span className="adm-label">Documents (optional)</span>
+      <span className="adm-hint adm-doc-lead">Shown on the event page under “Documents”, e.g. agenda, slides, report or reading material.</span>
+      {list.length > 0 && (
+        <ul className="adm-att-list">
+          {list.map((a, i) => {
+            const uploaded = a.url.startsWith('/files/');
+            return (
+              <li key={i} className="adm-att">
+                <span className="adm-doc-icon" aria-hidden="true">
+                  {uploaded ? a.url.split('.').pop().toUpperCase() : 'LINK'}
+                </span>
+                <span className="adm-att-fields">
+                  <input aria-label={`Document ${i + 1} name`} placeholder="Name shown on the website" value={a.name} maxLength={150} onChange={(e) => update(i, { name: e.target.value })} />
+                  {uploaded ? (
+                    <small>{fileSize(a.size) || 'Uploaded file'}</small>
+                  ) : (
+                    <input aria-label={`Document ${i + 1} link`} placeholder="https://drive.google.com/…" inputMode="url" value={a.url === 'https://' ? '' : a.url} onChange={(e) => update(i, { url: e.target.value.trim() || 'https://' })} />
+                  )}
+                </span>
+                {(uploaded || /^https?:\/\/.+\..+/.test(a.url)) && (
+                  <a className="adm-btn adm-btn-ghost" href={a.url} target="_blank" rel="noreferrer">
+                    Open
+                  </a>
+                )}
+                <button type="button" className="adm-btn" onClick={() => onChange(list.filter((_, j) => j !== i))} aria-label={`Remove ${a.name || 'document'}`}>
+                  Remove
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <div className="adm-doc-drop">
+        <button type="button" className="adm-btn" disabled={pct !== null || list.length >= MAX} onClick={() => input.current?.click()}>
+          {pct !== null ? `Uploading… ${pct}%` : 'Upload file'}
+        </button>
+        <button type="button" className="adm-btn adm-btn-ghost" disabled={pct !== null || list.length >= MAX} onClick={() => onChange([...list, { url: 'https://', name: '', size: 0 }])}>
+          + Add a link
+        </button>
+        <span className="adm-hint">PDF, Word or PowerPoint · up to {DOC_MAX_MB} MB each · max {MAX}</span>
+        {pct !== null && (
+          <span className="adm-doc-bar" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+            <i style={{ width: `${pct}%` }} />
+          </span>
+        )}
+      </div>
+      <input
+        ref={input}
+        type="file"
+        hidden
+        multiple
+        accept={DOC_ACCEPT}
+        onChange={(e) => {
+          pick(e.target.files);
+          e.target.value = '';
+        }}
+      />
+      {(msg || error) && <span className="adm-field-error">{msg || error}</span>}
+      <div className="adm-note adm-doc-note">
+        <b>File bigger than {DOC_MAX_MB} MB?</b> Upload it to Google Drive (or OneDrive, Dropbox or another sharing site), set sharing to{' '}
+        <b>“Anyone with the link can view”</b>, copy the link, click <b>+ Add a link</b> and paste it.
+      </div>
+    </div>
+  );
+}
+
+// Popup for Content type > Report: one report file (PDF / Word / PowerPoint, max 50 MB) or a share link.
+function ReportDialog({ value, eventTitle, onSave, onCancel, onUploaded }) {
+  const uploadedNow = value?.url?.startsWith('/files/');
+  const [mode, setMode] = useState(value && !uploadedNow ? 'link' : 'file');
+  const [file, setFile] = useState(uploadedNow ? value : null);
+  const [link, setLink] = useState(value && !uploadedNow ? value.url : '');
+  const [title, setTitle] = useState(value?.title || '');
+  const [pct, setPct] = useState(null);
+  const [err, setErr] = useState('');
+  const input = useRef(null);
+  const linkOk = /^https?:\/\/[^\s<>"]+\.[^\s<>"]+$/i.test(link);
+  const ready = mode === 'file' ? !!file : linkOk;
+
+  useEffect(() => {
+    const esc = (e) => e.key === 'Escape' && pct === null && onCancel();
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onCancel, pct]);
+
+  function pick(f) {
+    setErr('');
+    if (!f) return;
+    const bad = checkDoc(f);
+    if (bad) return setErr(bad);
+    uploadDoc(f, setPct)
+      .then((up) => {
+        onUploaded(up.url);
+        setFile({ url: up.url, name: up.name || f.name, size: up.size });
+      })
+      .catch((e) => setErr(e.message))
+      .finally(() => setPct(null));
+  }
+  function save() {
+    if (!ready) return;
+    const t = title.trim();
+    onSave(mode === 'file' ? { ...file, title: t } : { url: link.trim(), name: t || 'Report', size: 0, title: t });
+  }
+
+  return (
+    <div className="adm-dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && pct === null && onCancel()}>
+      <div className="adm-dialog" role="dialog" aria-modal="true" aria-labelledby="report-dialog-title">
+        <h3 id="report-dialog-title">Add the report</h3>
+        <p className="adm-hint">It shows in Recordings &gt; Reports and on the event page (“Read the report”).</p>
+
+        <label className="adm-field is-wide">
+          <span className="adm-label">Report title</span>
+          <input value={title} maxLength={200} placeholder={eventTitle || 'Same as the event title'} onChange={(e) => setTitle(e.target.value)} />
+          <span className="adm-hint">Leave empty to use the event title.</span>
+        </label>
+
+        <div className="adm-radios adm-dialog-tabs" role="radiogroup" aria-label="Report source">
+          {[
+            ['file', 'Upload document'],
+            ['link', 'Document link'],
+          ].map(([v, l]) => (
+            <label key={v} className={mode === v ? 'is-on' : ''}>
+              <input type="radio" name="reportMode" checked={mode === v} onChange={() => (setMode(v), setErr(''))} />
+              {l}
+            </label>
+          ))}
+        </div>
+
+        {mode === 'file' ? (
+          <div className="adm-dialog-body">
+            {file ? (
+              <div className="adm-att">
+                <span className="adm-doc-icon" aria-hidden="true">{file.url.split('.').pop().toUpperCase()}</span>
+                <span className="adm-att-fields">
+                  <b>{file.name}</b>
+                  <small>{fileSize(file.size)}</small>
+                </span>
+                <a className="adm-btn adm-btn-ghost" href={file.url} target="_blank" rel="noreferrer">Open</a>
+                <button type="button" className="adm-btn" onClick={() => setFile(null)}>Remove</button>
+              </div>
+            ) : (
+              <div className="adm-doc-drop">
+                <button type="button" className="adm-btn" disabled={pct !== null} onClick={() => input.current?.click()}>
+                  {pct !== null ? `Uploading… ${pct}%` : 'Choose report file'}
+                </button>
+                <span className="adm-hint">One file · PDF, Word or PowerPoint · up to {DOC_MAX_MB} MB</span>
+                {pct !== null && (
+                  <span className="adm-doc-bar" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+                    <i style={{ width: `${pct}%` }} />
+                  </span>
+                )}
+              </div>
+            )}
+            <input ref={input} type="file" hidden accept={DOC_ACCEPT} onChange={(e) => (pick(e.target.files?.[0]), (e.target.value = ''))} />
+          </div>
+        ) : (
+          <label className="adm-field is-wide adm-dialog-body">
+            <span className="adm-label">Report link</span>
+            <input value={link} inputMode="url" placeholder="https://drive.google.com/…" onChange={(e) => setLink(e.target.value.trim())} />
+            {link && !linkOk && <span className="adm-field-error">Paste a full link starting with https://</span>}
+          </label>
+        )}
+        {err && <span className="adm-field-error">{err}</span>}
+
+        <div className="adm-note adm-doc-note">
+          <b>Only the report document goes here</b> (PDF, Word or PowerPoint). Agenda, slides and other files go under “Documents”.
+          <br />
+          <b>Bigger than {DOC_MAX_MB} MB?</b> Upload it to Google Drive (or OneDrive, Dropbox…), set sharing to <b>“Anyone with the link can view”</b>, choose
+          <b> Document link</b> and paste it.
+        </div>
+
+        <div className="adm-dialog-actions">
+          <button type="button" className="adm-btn adm-btn-ghost" onClick={onCancel} disabled={pct !== null}>
+            Cancel
+          </button>
+          <button type="button" className="adm-btn adm-btn-primary" onClick={save} disabled={!ready || pct !== null}>
+            Save report
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Editor({ initial, meta, onSaved, onCancel }) {
   const { call, notify } = useAdmin();
-  const [f, setF] = useState(() => ({ ...blank(), ...initial, capacity: initial.capacity ?? '', speakers: initial.speakers || [] }));
+  const [f, setF] = useState(() => ({ ...blank(), ...initial, capacity: initial.capacity ?? '', speakers: initial.speakers || [], attachments: initial.attachments || [],
+    // events saved before "Content type" existed show under Videos when they have a link
+    contentType: initial.contentType ?? ((initial.youtubeUrl || initial.recordingUrl) ? 'video' : ''),
+    report: initial.report || null,
+  }));
+  const [reportOpen, setReportOpen] = useState(false); // Content type > Report popup
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
   // photos uploaded while this form is open; the ones not kept are deleted from storage (S3)
   const uploads = useRef([]);
-  const discardUnused = (keep) => {
+  const docUploads = useRef([]); // documents uploaded while this form is open
+  const discardUnused = (keep, keepDocs = [...(initial.attachments || []), ...(initial.report ? [initial.report] : [])]) => {
     for (const url of uploads.current) if (url !== keep && url !== initial.image) call('/api/admin/upload/discard', { url }).catch(() => {});
     uploads.current = [];
+    const kept = new Set(keepDocs.map((a) => a.url));
+    for (const url of docUploads.current) if (!kept.has(url)) call('/api/admin/upload-doc/discard', { url }).catch(() => {});
+    docUploads.current = [];
   };
   const cancel = () => {
     discardUnused(initial.image);
@@ -128,9 +369,13 @@ function Editor({ initial, meta, onSaved, onCancel }) {
     e.preventDefault();
     setBusy(true);
     try {
-      const body = { ...f, capacity: f.capacity === '' ? null : Number(f.capacity) };
+      const body = {
+        ...f,
+        capacity: f.capacity === '' ? null : Number(f.capacity),
+        attachments: f.attachments.filter((a) => a.url && a.url !== 'https://'), // empty link rows are dropped
+      };
       const saved = f._id ? await call(`/api/admin/events/${f._id}`, body, 'PUT') : await call('/api/admin/events', body);
-      discardUnused(saved.image);
+      discardUnused(saved.image, [...(saved.attachments || []), ...(saved.report ? [saved.report] : [])]);
       notify(f._id ? 'Event updated' : 'Event added');
       onSaved(saved);
     } catch (x) {
@@ -206,10 +451,10 @@ function Editor({ initial, meta, onSaved, onCancel }) {
         </div>
 
         <Field
-          label="Video / recording link"
+          label="Video / podcast recording link"
           error={errors.youtubeUrl}
           wide
-          hint={videoHint(f.youtubeUrl) || 'Any video link: YouTube, Vimeo, Google Drive, an .mp4 file, Facebook or any other site. It shows on the event page and under Recordings > Videos.'}
+          hint={videoHint(f.youtubeUrl) || 'Any link: YouTube, Vimeo, Google Drive, Spotify, SoundCloud, an .mp4/.mp3 file or any other site. It shows on the event page.'}
         >
           <input value={f.youtubeUrl} onChange={(e) => set('youtubeUrl', e.target.value.trim())} placeholder="https://…" inputMode="url" />
         </Field>
@@ -222,9 +467,72 @@ function Editor({ initial, meta, onSaved, onCancel }) {
           </div>
         )}
 
+        <div className={`adm-field is-wide ${errors.report ? 'has-error' : ''}`}>
+          <span className="adm-label">Content type (optional)</span>
+          <div className="adm-radios adm-radios-wrap" role="group" aria-label="Content type">
+            {[
+              ['video', 'Video'],
+              ['podcast', 'Podcast'],
+            ].map(([v, l]) => (
+              <label key={v} className={f.contentType === v ? 'is-on' : ''}>
+                <input type="checkbox" checked={f.contentType === v} onChange={(e) => set('contentType', e.target.checked ? v : '')} />
+                {l}
+              </label>
+            ))}
+            <label className={f.report ? 'is-on' : ''}>
+              <input type="checkbox" checked={!!f.report} onChange={(e) => (e.target.checked ? setReportOpen(true) : set('report', null))} />
+              Report
+            </label>
+          </div>
+          <span className="adm-hint">
+            {!f.contentType && !f.report
+              ? 'Nothing ticked: shows only in Events (upcoming / past). Fine for upcoming events.'
+              : [
+                  f.contentType === 'video' && (f.youtubeUrl ? 'Also in Recordings > Videos.' : 'Video: add the recording link above to show it in Recordings > Videos.'),
+                  f.contentType === 'podcast' && (f.youtubeUrl ? 'Also in Recordings > Podcasts.' : 'Podcast: add the recording link above to show it in Recordings > Podcasts.'),
+                  f.report && 'Also in Recordings > Reports.',
+                  'Always shown in Events too.',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+          </span>
+          {f.report && (
+            <div className="adm-att adm-report-chip">
+              <span className="adm-doc-icon" aria-hidden="true">
+                {f.report.url.startsWith('/files/') ? f.report.url.split('.').pop().toUpperCase() : 'LINK'}
+              </span>
+              <span className="adm-att-fields">
+                <b>Report: {f.report.title || f.title || 'same as the event title'}</b>
+                <small>{f.report.url.startsWith('/files/') ? [f.report.name, fileSize(f.report.size)].filter(Boolean).join(' · ') : f.report.url}</small>
+              </span>
+              <button type="button" className="adm-btn adm-btn-ghost" onClick={() => setReportOpen(true)}>
+                Change
+              </button>
+              <button type="button" className="adm-btn" onClick={() => set('report', null)}>
+                Remove
+              </button>
+            </div>
+          )}
+          {errors.report && <span className="adm-field-error">{errors.report}</span>}
+          {reportOpen && (
+            <ReportDialog
+              value={f.report}
+              eventTitle={f.title}
+              onUploaded={(u) => docUploads.current.push(u)}
+              onCancel={() => setReportOpen(false)}
+              onSave={(r) => {
+                set('report', r);
+                setReportOpen(false);
+              }}
+            />
+          )}
+        </div>
+
         <Field label="Description" error={errors.description} wide hint="Leave an empty line between paragraphs">
           <textarea rows={6} value={f.description} onChange={(e) => set('description', e.target.value)} />
         </Field>
+
+        <Attachments value={f.attachments} onChange={(v) => set('attachments', v)} onUploaded={(u) => docUploads.current.push(u)} error={errors.attachments} />
 
         <div className="adm-field is-wide">
           <span className="adm-label">Speakers</span>

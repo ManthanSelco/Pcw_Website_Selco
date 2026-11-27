@@ -4,6 +4,10 @@
 // Columns: city, date (YYYY-MM-DD or DD/MM/YYYY), startTime, endTime (HH:MM, 24h), title, tagline,
 //          category, venue, image (link), youtubeUrl, rsvp (open/link/closed/none), rsvpUrl (form link when rsvp=link), capacity, description
 // Add --replace to delete all existing events first. (The admin panel is easier for a few events.)
+// Safe options:
+//   --dry-run   only show what would happen, change nothing
+//   --only-new  add new events only; an event already on the site (same city + date + title) is left untouched
+//               (photos, links or edits made in the admin panel are kept)
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
@@ -35,9 +39,16 @@ const toTime = (v) => {
   return `${String(h).padStart(2, '0')}:${m[2]}`;
 };
 
+const DRY = process.argv.includes('--dry-run');
+const ONLY_NEW = process.argv.includes('--only-new');
+if (DRY && process.argv.includes('--replace')) {
+  console.error('--dry-run and --replace cannot be used together.');
+  process.exit(1);
+}
 const store = createStore(config);
 await store.connect();
 const events = store.collection('events');
+console.log(`${rows.length} rows in ${path.basename(file)}${DRY ? '  (DRY RUN: nothing will be saved)' : ''}${ONLY_NEW ? '  (only new events)' : ''}\n`);
 if (process.argv.includes('--replace')) {
   for (const e of await events.find({})) await events.deleteOne({ _id: e._id });
   console.log('Removed all existing events.');
@@ -61,15 +72,21 @@ for (const [i, r] of rows.entries()) {
     continue;
   }
   const old = await events.findOne({ city: data.city, date: data.date, title: data.title });
-  if (old) {
-    await events.updateOne({ _id: old._id }, { ...data, slug: old.slug, updatedAt: new Date().toISOString() });
+  if (old && ONLY_NEW) {
+    console.log(`  = already on the site, left as it is: ${data.date}  ${data.title}`);
+    skipped++;
+  } else if (old) {
+    if (!DRY) await events.updateOne({ _id: old._id }, { ...data, slug: old.slug, updatedAt: new Date().toISOString() });
+    console.log(`  ~ ${DRY ? 'would update' : 'updated'}: ${data.date}  ${data.title}`);
     updated++;
   } else {
     let slug = `${slugify(data.title)}-${data.date}`;
     for (let n = 2; await events.findOne({ slug }); n++) slug = `${slugify(data.title)}-${data.date}-${n}`;
-    await events.insertOne({ ...data, slug, sample: false, createdAt: new Date().toISOString() });
+    if (!DRY) await events.insertOne({ ...data, slug, sample: false, createdAt: new Date().toISOString() });
+    console.log(`  + ${DRY ? 'would add' : 'added'}: ${data.date}  ${data.title}`);
     added++;
   }
 }
-console.log(`\nDone: ${added} added, ${updated} updated, ${skipped} skipped.`);
+console.log(`\n${DRY ? 'DRY RUN, nothing saved. Would be' : 'Done'}: ${added} added, ${updated} updated, ${skipped} skipped.`);
+console.log(`Events on the site now: ${(await events.find({})).length}`);
 await store.close();

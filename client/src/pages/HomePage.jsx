@@ -11,12 +11,14 @@ import Instagram from '../sections/Instagram.jsx';
 import Footer from '../sections/Footer.jsx';
 import { runLegacyScripts } from '../legacy/runLegacy.js';
 import { connectNewsletter } from '../features/newsletter.js';
+import { connectNavMenus } from '../features/navMenus.js';
 
 // The home page: same markup and animations as the Webflow site.
 export default function HomePage() {
   useEffect(() => {
     // Webflow, GSAP and the custom animations need the page in the DOM first
     runLegacyScripts().then(connectNewsletter);
+    const offMenus = connectNavMenus();
     // Coming from another page with a link like /#about-us: once the loader is gone, scroll there.
     const id = decodeURIComponent(window.location.hash.slice(1));
     if (id) {
@@ -37,6 +39,7 @@ export default function HomePage() {
         mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
       }
     }
+    return offMenus;
   }, []);
 
   return (

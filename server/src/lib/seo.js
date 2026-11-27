@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CITIES, todayIST } from './cities.js';
 import { youtubeId, mediaFor } from './media.js';
-import { TYPES, TYPE_LABELS, publicRecording, eventAsVideo, sortRecordings } from './recordings.js';
+import { TYPES, TYPE_LABELS, publicRecording, eventsOfType, sortRecordings } from './recordings.js';
 import { getSpace } from './spaces.js';
 import { getSite } from './site.js';
 import { getFaq } from './faq.js';
@@ -220,9 +220,7 @@ async function loadRecordings(store, events) {
   const all = (await store.collection('recordings').find({})).filter((x) => x.published !== false);
   const out = {};
   for (const t of TYPES) {
-    let items = sortRecordings(all.filter((x) => x.type === t)).map(publicRecording);
-    if (t === 'video') items = sortRecordings([...items, ...events.filter((e) => e.youtubeUrl || e.recordingUrl).map(eventAsVideo)]);
-    out[t] = items;
+    out[t] = sortRecordings([...sortRecordings(all.filter((x) => x.type === t)).map(publicRecording), ...eventsOfType(events, t)]);
   }
   return out;
 }

@@ -100,9 +100,17 @@ export function createApp(store, config) {
   if (config.storage?.sendDoc)
     app.get('/files/:name', async (req, res, next) => {
       try {
-        const rec = (await store.collection('recordings').find({})).find((x) => x.link === `/files/${req.params.name}` && x.published !== false);
-        if (!rec) return res.status(404).end();
-        await config.storage.sendDoc(req.params.name, res, rec.fileName || `${rec.title}.${req.params.name.split('.').pop()}`);
+        const url = `/files/${req.params.name}`;
+        const ext = req.params.name.split('.').pop();
+        const rec = (await store.collection('recordings').find({})).find((x) => x.link === url && x.published !== false);
+        if (rec) return await config.storage.sendDoc(req.params.name, res, rec.fileName || `${rec.title}.${ext}`);
+        // a document attached to an event
+        for (const e of await store.collection('events').find({})) {
+          if (e.published === false) continue;
+          const a = e.report?.url === url ? { name: e.report.name || `${e.report.title || e.title} report` } : (e.attachments || []).find((x) => x.url === url);
+          if (a) return await config.storage.sendDoc(req.params.name, res, /\.[a-z]{3,4}$/i.test(a.name) ? a.name : `${a.name}.${ext}`);
+        }
+        res.status(404).end();
       } catch (e) {
         next(e);
       }
